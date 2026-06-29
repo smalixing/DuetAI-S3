@@ -1,0 +1,13 @@
+[sections:FSymTab]
+entries:
+    FSymTab+
+
+[scheme:fsymtab]
+entries:
+    FSymTab -> flash_rodata
+
+[mapping:fsymtab]
+archive: *
+entries:
+    * (fsymtab);
+    FSymTab -> flash_rodata ALIGN(4) SURROUND(_fsymtab) KEEP()
