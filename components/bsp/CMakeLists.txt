@@ -1,0 +1,33 @@
+
+#     idf_component_register(
+#         SRC_DIRS
+#             "src/boards"
+#             "src/peripherals"
+#             "src/storage"
+#             "src/codec/es7210"
+#             "src/codec/es7243e"
+#             "src/codec/es8156"
+#             "src/codec/es8311"
+#             "src/codec/es8388"
+#             "src/lcd_panel" 
+#         INCLUDE_DIRS
+#             "src/boards"
+#             "include"
+#             "src/codec/es7210"
+#             "src/codec/es7243e"
+#             "src/codec/es8156"
+#             "src/codec/es8311"
+#             "src/codec/es8388"
+#             "src/codec/include"
+#         REQUIRES
+#             esp_hid
+#             esp_lcd
+#             i2c_bus
+#             i2c_devices
+#             esp_adc
+#             )
+# target_compile_options(${COMPONENT_LIB} PRIVATE    
+# -Wno-unused-variable
+# -Wno-unused-function
+# -Wno-format
+# )
