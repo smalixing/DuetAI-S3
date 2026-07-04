@@ -12,7 +12,6 @@
 #include "esp_log.h"
 #include "driver/rmt.h"
 #include "driver/gpio.h"
-#include "ir_tools.h"
 #include "bsp_rtm.h"
 #include "bsp_board.h"
 static const char *TAG = "rtm";
@@ -34,43 +33,6 @@ void bsp_rmt_default_init()
     {
         bsp_rmt_tx_init(brd->rtm_param_tb[i].rtm_gpio_num,brd->rtm_param_tb->channel);
     }
-}
-
-void bsp_rmt_base_write(uint8_t rmt_channel,BSP_RTM_PROTOCOL_T protocal,uint32_t addr,uint32_t cmd)
-{
-    ir_builder_t *ir_builder = NULL;
-    rmt_item32_t *items = NULL;
-    size_t length = 0;
-    ir_builder_config_t ir_builder_config = IR_BUILDER_DEFAULT_CONFIG((ir_dev_t)rmt_channel);
-    ir_builder_config.flags |= IR_TOOLS_FLAGS_PROTO_EXT; // Using extended IR protocols (both NEC and RC5 have extended version)
-    if(protocal == BSP_RTM_PROTOCOL_NEC)
-    ir_builder = ir_builder_rmt_new_nec(&ir_builder_config);
-    else
-    ir_builder = ir_builder_rmt_new_rc5(&ir_builder_config);
-
-    ESP_LOGI(TAG, "Send command 0x%x to address 0x%x", cmd, addr);
-    // Send new key code
-    ESP_ERROR_CHECK(ir_builder->build_frame(ir_builder, addr, cmd));
-    ESP_ERROR_CHECK(ir_builder->get_result(ir_builder, &items, &length));
-    //To send data according to the waveform items.
-    rmt_write_items(rmt_channel, items, length, false);
-    // Send repeat code
-    vTaskDelay(pdMS_TO_TICKS(ir_builder->repeat_period_ms));
-    ESP_ERROR_CHECK(ir_builder->build_repeat_frame(ir_builder));
-    ESP_ERROR_CHECK(ir_builder->get_result(ir_builder, &items, &length));
-    rmt_write_items(rmt_channel, items, length, false);
-    ir_builder->del(ir_builder);
-}
-
-int bsp_rmt_write(uint8_t id,BSP_RTM_PROTOCOL_T protocal,uint32_t addr,uint32_t cmd)
-{
-    const board_res_desc_t *brd = bsp_board_get_description();
-    if(brd->rtm_len > id)
-    {
-        bsp_rmt_base_write(brd->rtm_param_tb[id].channel,protocal,addr,cmd);
-        return 0;
-    }
-    return -1;
 }
 
 void bsp_rmt_ir_set_freq(uint8_t id, int freq)

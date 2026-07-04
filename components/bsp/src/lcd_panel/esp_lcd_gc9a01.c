@@ -125,8 +125,7 @@ esp_err_t esp_lcd_new_panel_gc9a01(const esp_lcd_panel_io_handle_t io, const esp
     *ret_panel = &(gc9a01->base);
     ESP_LOGD(TAG, "new gc9a01 panel @%p", gc9a01);
 
-    ESP_LOGI(TAG, "LCD panel create success, version: %d.%d.%d", ESP_LCD_GC9A01_VER_MAJOR, ESP_LCD_GC9A01_VER_MINOR,
-             ESP_LCD_GC9A01_VER_PATCH);
+    ESP_LOGI(TAG, "LCD panel create success");
 
     return ESP_OK;
 

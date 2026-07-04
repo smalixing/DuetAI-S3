@@ -21,43 +21,19 @@ static boards_info_t *g_board = NULL;
 
 static esp_err_t bsp_board_detect()
 {
-    esp_err_t ret = ESP_ERR_NOT_FOUND;
-    #if 0
-    for (size_t i = 0; i < (sizeof(g_boards_info) / sizeof(boards_info_t)) - 1; i++) {
-        const board_res_desc_t *brd = g_boards_info[i].board_get_res_desc();
-        /*!< Initialize I2C bus, used for TP ,audio codec and IMU */
-        bsp_i2c_init(I2C_NUM_0, 400 * 1000, brd->GPIO_I2C_SCL, brd->GPIO_I2C_SDA);
-        uint32_t codecs = 0;
-        /*- get the audio encode and decode chip*/
-        bsp_codec_detect(&codecs);
+    /*!< Only the ESP32-S3 dual-module board is supported for now.
+     *   Use array index 0, since g_boards_info holds a single entry (the
+     *   boards_id_t value is not an index into this table). */
+    g_board = (boards_info_t *)&g_boards_info[0];
 
-        if ((CODEC_DEV_ES7210 | CODEC_DEV_ES8311) == codecs) {
-            g_board = (boards_info_t *)&g_boards_info[BOARD_S3_BOX];
-            ret = ESP_OK;
-            break;
-        } else if ((CODEC_DEV_ES7243 | CODEC_DEV_ES8156) == codecs) {
-            g_board = (boards_info_t *)&g_boards_info[BOARD_S3_BOX_LITE];
-            ret = ESP_OK;
-            break;
-        } else {
-            ESP_LOGE(TAG, "Can't Detect a correct board");
-            //bsp_i2c_deinit();
-        }
-        bsp_i2c_deinit(I2C_NUM_0);
+    const board_res_desc_t *brd = g_board->board_get_res_desc();
+    if (brd->FUNC_I2C_EN) {
+        /*!< Initialize I2C bus, used for audio codec and IMU */
+        bsp_i2c_init(I2C_NUM_0, 400 * 1000, brd->GPIO_I2C_SCL, brd->GPIO_I2C_SDA);
     }
-    #endif
-    if(ret == ESP_ERR_NOT_FOUND)
-    {
-        const board_res_desc_t *brd = g_boards_info[BOARD_ACIGA_P1].board_get_res_desc();
-        if(brd->FUNC_I2C_EN)
-            bsp_i2c_init(I2C_NUM_0, 400 * 1000, brd->GPIO_I2C_SCL, brd->GPIO_I2C_SDA);
-        g_board = (boards_info_t *)&g_boards_info[BOARD_ACIGA_P1];
-        ret = ESP_OK;
-    }
-    if (g_board) {
-            ESP_LOGI(TAG, "Detected board: [%s]", g_board->name);
-        }
-    return ret;
+
+    ESP_LOGI(TAG, "Detected board: [%s]", g_board->name);
+    return ESP_OK;
 }
 
 const boards_info_t *bsp_board_get_info(void)
