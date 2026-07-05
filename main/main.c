@@ -16,10 +16,26 @@
 
 #include "bsp_board.h"
 #include "lvgl_port.h"
+#include "wake_word_task.h"
 
 #include "hal_log.h"
 
 static const char *TAG = "main";
+
+/**
+ * @brief Wake word detection callback
+ * 
+ * This function is called when a wake word is detected.
+ * 
+ * @param wake_word_index The index of detected wake word
+ * @param wake_word_name The name of detected wake word
+ */
+static void wake_word_detected_callback(int wake_word_index, const char *wake_word_name)
+{
+    hal_log_info("Wake word detected: %s (index: %d)", wake_word_name, wake_word_index);
+    // Add your wake word handling logic here
+    // For example: start voice recognition, play a sound, etc.
+}
 
 void app_main(void)
 {
@@ -52,11 +68,21 @@ void app_main(void)
     }
     hal_log_info("LVGL port init done");
 
+    /* Start wake word detection */
+    hal_log_info("Starting wake word detection...");
+    ret = wake_word_task_start(wake_word_detected_callback);
+    if (ESP_OK != ret) {
+        hal_log_err("Wake word task start failed: %s", esp_err_to_name(ret));
+        // Continue even if wake word detection fails, as it's not critical
+    } else {
+        hal_log_info("Wake word detection started");
+    }
+
     while (1) {
         printf("free heap size: %ld, internal size: %ld, minimum size: %ld\n",
             esp_get_free_heap_size(),
             esp_get_free_internal_heap_size(),
             esp_get_minimum_free_heap_size());
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
