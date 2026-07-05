@@ -183,6 +183,8 @@ esp_err_t bsp_lcd_init(void)
     ret_val |= esp_lcd_panel_set_gap(panel_handle, 0, 0);
     ret_val |= esp_lcd_panel_swap_xy(panel_handle, brd->LCD_SWAP_XY);
     ret_val |= esp_lcd_panel_mirror(panel_handle, brd->LCD_MIRROR_X, brd->LCD_MIRROR_Y);
+    /* Turn the display on (IDF panel drivers do not enable it in panel_init) */
+    ret_val |= esp_lcd_panel_disp_on_off(panel_handle, true);
     char *data = malloc(brd->LCD_HEIGHT*((panel_config.bits_per_pixel+7)/8));
     memset(data,0,brd->LCD_HEIGHT*((panel_config.bits_per_pixel+7)/8));
     for(uint16_t i = 0;i<brd->LCD_WIDTH;i++)

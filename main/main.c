@@ -15,6 +15,7 @@
 #include "esp_err.h"
 
 #include "bsp_board.h"
+#include "lvgl_port.h"
 
 #include "hal_log.h"
 
@@ -42,6 +43,14 @@ void app_main(void)
         return;
     }
     hal_log_info("Board init done");
+
+    /* Initialize LVGL and light up the screen */
+    ret = lvgl_port_init();
+    if (ESP_OK != ret) {
+        hal_log_err("LVGL port init failed: %s", esp_err_to_name(ret));
+        return;
+    }
+    hal_log_info("LVGL port init done");
 
     while (1) {
         printf("free heap size: %ld, internal size: %ld, minimum size: %ld\n",

@@ -47,7 +47,8 @@ static const board_res_desc_t g_board_s3_dual_module_res = {
     .FUNC_LCD_EN =     (1),
     .LCD_BUS_WIDTH =   (1),
     .LCD_IFACE_SPI =   (1),
-    .LCD_DISP_IC_ST =  (1),
+    /*!< 0: NT35510, 1: ST7789, other: GC9A01 (see bsp_lcd_init) */
+    .LCD_DISP_IC_ST =  (2),
     .LCD_WIDTH =       (240),
     .LCD_HEIGHT =      (240),
     .LCD_FREQ =        (40 * 1000 * 1000),
@@ -58,7 +59,7 @@ static const board_res_desc_t g_board_s3_dual_module_res = {
     .LCD_SWAP_XY =     (0),
     .LCD_MIRROR_X =    (true),
     .LCD_MIRROR_Y =    (true),
-    .LCD_COLOR_INV =   (false),
+    .LCD_COLOR_INV =   (true),
     .LCD_COLOR_SPACE = ESP_LCD_COLOR_SPACE_BGR,
 
     /*!< No dedicated backlight pin on this board; panel power comes from PERI_PWR_ON */
