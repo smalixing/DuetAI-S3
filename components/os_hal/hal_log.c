@@ -77,11 +77,9 @@ void hal_systime_get(char buf[24])
                 (unsigned long)tv.tv_usec / 1000);
 }
 
-#if 0
 uint64_t hal_timestamp_get(void)
 {
     struct timespec tp;
     clock_gettime(CLOCK_MONOTONIC, &tp);
     return (uint64_t)tp.tv_sec * 1000 + tp.tv_nsec / 1000000;
 }
-#endif
