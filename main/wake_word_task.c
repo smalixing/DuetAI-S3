@@ -25,8 +25,9 @@ static const char *TAG = "wake_word";
 // Wake word detection task configuration
 // esp-sr wakenet needs a generous stack, especially on the detection branch
 // (get_triggered_channel + callback + clean). 4 KB overflows and crashes with
-// a LoadProhibited panic right after the first detection.
-#define WAKE_WORD_TASK_STACK_SIZE   (8 * 1024)
+// a LoadProhibited panic right after the first detection. The callback also
+// plays a WAV prompt (SPIFFS file I/O + i2s_write) on this task, so keep it big.
+#define WAKE_WORD_TASK_STACK_SIZE   (12 * 1024)
 #define WAKE_WORD_TASK_PRIORITY     (5)
 #define WAKE_WORD_TASK_CORE_ID      (1)
 
