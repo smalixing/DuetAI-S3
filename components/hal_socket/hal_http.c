@@ -6,8 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define Content_Length      "Content-Length: "
-#define Content_Range       "Content-Range: bytes "
+#define CONTENT_LENGTH      "Content-Length: "
+#define CONTENT_RANGE       "Content-Range: bytes "
+#define CONNECTION_CLOSE    "Connection: close"
+#define TRANSFER_ENCODING   "Transfer-Encoding: "
 
 #define HTTP_DEFAULT_TIMEOUT        5000
 #define HTTP_DEFAULT_BUF_SIZE       4096
@@ -117,40 +119,312 @@ static int _http_send_get_header(network_t *network, char *buf, const char *url,
     return 0;
 }
 
-static int _http_recv_response(network_t *network, char *buf, char **data_ptr, int *data_len)
+#include <stdbool.h>
+
+typedef struct {
+    int response_code;      /* HTTP状态码 */
+    int content_length;     /* Content-Length值，-1表示未指定 */
+    bool connection_close;  /* Connection: close */
+    bool chunked;           /* Transfer-Encoding: chunked */
+    char *body_ptr;         /* buf中body起始位置 */
+    int body_len;           /* 随header已收到的body长度 */
+} http_response_info_t;
+
+static int _http_recv_header(network_t *network, char *buf, http_response_info_t *info)
 {
     int len = 0;
-    char *end_ptr;
-    do {
-        int ret = network->read(network, (uint8_t *)buf + len, HTTP_DEFAULT_BUF_SIZE - len, HTTP_DEFAULT_TIMEOUT);
-        if (ret <= 0) {
-            hal_log_err("http read err or timeout, ret(%d)", ret);
+    int ret;
+    char *end_ptr = NULL;
+
+    memset(info, 0, sizeof(*info));
+    info->content_length = -1;
+
+    /* 1. 读取直到 \r\n\r\n（header结束） */
+    while (1) {
+        if (len >= HTTP_DEFAULT_BUF_SIZE - 1) {
+            hal_log_err("header too large");
             return -1;
         }
+
+        ret = network->read(network,
+                            (uint8_t *)buf + len,
+                            HTTP_DEFAULT_BUF_SIZE - len - 1,
+                            HTTP_DEFAULT_TIMEOUT);
+
+        if (ret <= 0) {
+            hal_log_err("http read header failed ret=%d", ret);
+            return -1;
+        }
+
         len += ret;
         buf[len] = 0;
-        hal_log_debug("recv:\n%s", buf);
+
         end_ptr = strstr(buf, "\r\n\r\n");
-    } while ((end_ptr == NULL) && (len < HTTP_DEFAULT_BUF_SIZE));
+        if (end_ptr) {
+            break;
+        }
+    }
 
-    if (end_ptr == NULL) {
-        hal_log_err("recv header err, not find \\r\\n\\r\\n");
+    hal_log_debug("recv(%d) header:\n%s", ret, buf);
+
+    /* 2. 解析状态码 */
+    info->response_code = atoi(buf + 9);
+    hal_log_debug("response code=%d", info->response_code);
+
+    if (info->response_code < 200 || info->response_code >= 300) {
         return -1;
     }
 
-    *end_ptr = 0;
-
-    int response_code = atoi(buf + 9);
-    hal_log_debug("Response code %d", response_code);
-
-    if (response_code < 200 || response_code >= 300)
-        return -1;
-
-    if (data_ptr) {
-        *data_ptr = end_ptr + 4;
-        *data_len = len - (*data_ptr - buf);
+    /* 3. 解析Content-Length */
+    char *ptr = strcasestr(buf, "Content-Length:");
+    if (ptr) {
+        info->content_length = atoi(ptr + strlen("Content-Length:"));
     }
 
+    /* 4. 解析Connection */
+    ptr = strcasestr(buf, "Connection:");
+    if (ptr && strcasestr(ptr, "close")) {
+        info->connection_close = true;
+    }
+
+    /* 5. 解析Transfer-Encoding: chunked */
+    ptr = strcasestr(buf, "Transfer-Encoding:");
+    if (ptr && strcasestr(ptr, "chunked")) {
+        info->chunked = true;
+    }
+
+    /* 6. 计算已随header收到的body数据 */
+    info->body_ptr = end_ptr + 4;
+    info->body_len = len - (info->body_ptr - buf);
+
+    hal_log_debug("content_length=%d, body_len=%d, chunked=%d, close=%d",
+                  info->content_length, info->body_len, info->chunked, info->connection_close);
+
+    return 0;
+}
+
+static int _http_recv_body_into_buf(network_t *network, char *buf, http_response_info_t *info,
+                                    char **data_ptr, int *data_len)
+{
+    char *body_ptr = info->body_ptr;
+    int body_len = info->body_len;
+
+    if (info->content_length >= 0) {
+        if (info->content_length > HTTP_DEFAULT_BUF_SIZE - (body_ptr - buf) - 1) {
+            hal_log_err("body too large (%d), buf only has %d",
+                        info->content_length, HTTP_DEFAULT_BUF_SIZE - (int)(body_ptr - buf) - 1);
+            return -1;
+        }
+
+        while (body_len < info->content_length) {
+            int ret = network->read(network, (uint8_t *)body_ptr + body_len,
+                                    info->content_length - body_len, HTTP_DEFAULT_TIMEOUT);
+            if (ret <= 0) {
+                hal_log_err("read body failed ret = %d", ret);
+                return -1;
+            }
+            body_len += ret;
+        }
+        body_ptr[body_len] = 0;
+
+        hal_log_debug("recv body len=%d", body_len);
+
+        if (data_ptr) *data_ptr = body_ptr;
+        if (data_len) *data_len = body_len;
+        return 0;
+    }
+
+    if (info->connection_close) {
+        while (1) {
+            if ((body_ptr - buf) + body_len >= HTTP_DEFAULT_BUF_SIZE - 1) {
+                hal_log_err("body buffer full");
+                return -1;
+            }
+
+            int ret = network->read(network,
+                                (uint8_t *)body_ptr + body_len,
+                                HTTP_DEFAULT_BUF_SIZE - (body_ptr - buf) - body_len - 1,
+                                HTTP_DEFAULT_TIMEOUT);
+
+            if (ret > 0) {
+                body_len += ret;
+            } else if (ret == 0) {
+                break;
+            } else {
+                if (body_len > 0) {
+                    hal_log_warn("read return %d, treat as end (got %d bytes)", ret, body_len);
+                    break;
+                }
+                hal_log_err("read body failed ret=%d", ret);
+                return -1;
+            }
+        }
+
+        body_ptr[body_len] = 0;
+
+        hal_log_debug("recv body(close) len=%d", body_len);
+
+        if (data_ptr) *data_ptr = body_ptr;
+        if (data_len) *data_len = body_len;
+        return 0;
+    }
+
+    if (info->chunked) {
+        int buf_cap = HTTP_DEFAULT_BUF_SIZE - (int)(body_ptr - buf) - 1;
+        int read_off  = 0;
+        int write_off = 0;
+        int raw_end   = body_len;
+
+        #define ENSURE_AVAILABLE(need)                                                  \
+            do {                                                                        \
+                while ((raw_end - read_off) < (need)) {                                 \
+                    if (raw_end >= buf_cap) {                                           \
+                        hal_log_err("chunked buffer full");                             \
+                        return -1;                                                      \
+                    }                                                                   \
+                    int _r = network->read(network,                                     \
+                                           (uint8_t *)body_ptr + raw_end,               \
+                                           buf_cap - raw_end,                           \
+                                           HTTP_DEFAULT_TIMEOUT);                       \
+                    if (_r <= 0) {                                                      \
+                        hal_log_err("chunked read failed ret=%d", _r);                  \
+                        return -1;                                                      \
+                    }                                                                   \
+                    raw_end += _r;                                                      \
+                }                                                                       \
+            } while (0)
+
+        while (1) {
+            int line_start = read_off;
+            int line_end = -1;
+            while (1) {
+                ENSURE_AVAILABLE(1);
+                if (body_ptr[read_off] == '\r') {
+                    ENSURE_AVAILABLE(2);
+                    if (body_ptr[read_off + 1] == '\n') {
+                        line_end = read_off;
+                        read_off += 2;
+                        break;
+                    }
+                }
+                read_off++;
+            }
+
+            char size_buf[24];
+            int line_len = line_end - line_start;
+            if (line_len <= 0 || line_len >= (int)sizeof(size_buf)) {
+                hal_log_err("invalid chunk size line len=%d", line_len);
+                return -1;
+            }
+            memcpy(size_buf, body_ptr + line_start, line_len);
+            size_buf[line_len] = 0;
+            for (int i = 0; i < line_len; ++i) {
+                if (size_buf[i] == ';' || size_buf[i] == ' ' || size_buf[i] == '\t') {
+                    size_buf[i] = 0;
+                    break;
+                }
+            }
+            int chunk_size = (int)strtol(size_buf, NULL, 16);
+            hal_log_debug("chunk size=%d", chunk_size);
+
+            if (chunk_size < 0) {
+                hal_log_err("invalid chunk size=%d", chunk_size);
+                return -1;
+            }
+
+            if (chunk_size == 0) {
+                while (1) {
+                    int t_start = read_off;
+                    int t_end = -1;
+                    while (1) {
+                        ENSURE_AVAILABLE(1);
+                        if (body_ptr[read_off] == '\r') {
+                            ENSURE_AVAILABLE(2);
+                            if (body_ptr[read_off + 1] == '\n') {
+                                t_end = read_off;
+                                read_off += 2;
+                                break;
+                            }
+                        }
+                        read_off++;
+                    }
+                    if (t_end == t_start) {
+                        break;
+                    }
+                }
+                break;
+            }
+
+            int remain = chunk_size;
+            if (write_off + chunk_size > buf_cap) {
+                hal_log_err("chunked body too large");
+                return -1;
+            }
+
+            while (remain > 0) {
+                ENSURE_AVAILABLE(1);
+                int avail = raw_end - read_off;
+                int copy_len = avail < remain ? avail : remain;
+                memmove(body_ptr + write_off, body_ptr + read_off, copy_len);
+                read_off  += copy_len;
+                write_off += copy_len;
+                remain    -= copy_len;
+            }
+
+            ENSURE_AVAILABLE(2);
+            if (body_ptr[read_off] != '\r' || body_ptr[read_off + 1] != '\n') {
+                hal_log_err("invalid chunk trailer");
+                return -1;
+            }
+            read_off += 2;
+        }
+
+        #undef ENSURE_AVAILABLE
+
+        body_len = write_off;
+        body_ptr[body_len] = 0;
+
+        hal_log_debug("recv body(chunked) len=%d", body_len);
+
+        if (data_ptr) *data_ptr = body_ptr;
+        if (data_len) *data_len = body_len;
+        return 0;
+    }
+
+    hal_log_warn("no length/chunked/close header, fallback to read-until-eof");
+
+    while (1) {
+        if ((body_ptr - buf) + body_len >= HTTP_DEFAULT_BUF_SIZE - 1) {
+            hal_log_err("body buffer full");
+            return -1;
+        }
+
+        int r = network->read(network,
+                            (uint8_t *)body_ptr + body_len,
+                            HTTP_DEFAULT_BUF_SIZE - (body_ptr - buf) - body_len - 1,
+                            HTTP_DEFAULT_TIMEOUT);
+
+        if (r > 0) {
+            body_len += r;
+        } else if (r == 0) {
+            break;
+        } else {
+            if (body_len > 0) {
+                hal_log_warn("read return %d, treat as end (got %d bytes)", r, body_len);
+                break;
+            }
+            hal_log_err("read body failed ret=%d", r);
+            return -1;
+        }
+    }
+
+    body_ptr[body_len] = 0;
+
+    hal_log_debug("recv body(fallback):\n%s", body_ptr);
+    hal_log_debug("recv body(fallback) len=%d", body_len);
+
+    if (data_ptr) *data_ptr = body_ptr;
+    if (data_len) *data_len = body_len;
     return 0;
 }
 
@@ -190,7 +464,12 @@ int hal_http_upload(const char *url, int opt_port, int content_length, hal_http_
         }
     }
 
-    ret = _http_recv_response(network, buf, NULL, NULL);
+    http_response_info_t resp_info;
+    ret = _http_recv_header(network, buf, &resp_info);
+    if (ret != 0)
+        goto exit;
+
+    ret = 0;
 
 exit:
     free(buf);
@@ -217,19 +496,19 @@ int hal_http_download(const char *url, int opt_port, int offset, int size, hal_h
     if (ret != 0)
         goto exit;
 
-    char *data_ptr;
-    int len;
-    ret = _http_recv_response(network, buf, &data_ptr, &len);
+    /* 只接收并解析HTTP头部 */
+    http_response_info_t resp_info;
+    ret = _http_recv_header(network, buf, &resp_info);
     if (ret != 0)
         goto exit;
 
-    char *tmp_ptr = strstr(buf, Content_Length);
-    if (tmp_ptr == NULL) {
-        hal_log_err("not find radical Content-Length");
+    /* 解析Content-Length */
+    if (resp_info.content_length < 0) {
+        hal_log_err("not find Content-Length in response header");
         ret = -1;
         goto exit;
     }
-    int content_len = atoi(tmp_ptr + sizeof(Content_Length) - 1);
+    int content_len = resp_info.content_length;
     if (size > 0 && content_len + offset != size) {
         hal_log_err("recv Content-Length(%d) offset(%d) not match want(%d)", content_len, offset, size);
         ret = -1;
@@ -237,14 +516,15 @@ int hal_http_download(const char *url, int opt_port, int offset, int size, hal_h
     }
     hal_log_debug("content_len = %d", content_len);
 
+    /* 解析Content-Range（带offset的断点续传请求） */
     if (offset >= 0) {
-        tmp_ptr = strstr(buf, Content_Range);
+        char *tmp_ptr = strcasestr(buf, CONTENT_RANGE);
         if (tmp_ptr == NULL) {
             hal_log_err("not find radical Content-Range, when offset(%d)", offset);
             ret = -1;
             goto exit;
         }
-        int range_start = atoi(tmp_ptr + sizeof(Content_Range) - 1);
+        int range_start = atoi(tmp_ptr + sizeof(CONTENT_RANGE) - 1);
         if (range_start != offset) {
             hal_log_err("recv Content-Range(%d) not match want(%d)", range_start, offset);
             ret = -1;
@@ -257,28 +537,28 @@ int hal_http_download(const char *url, int opt_port, int offset, int size, hal_h
         offset = 0;
 
     int user_ret = 0;
-    if (len > 0) {
-        user_ret = recv_cb(param, (uint8_t *)data_ptr, len, offset, content_len);
+
+    if (resp_info.body_len > 0) {
+        user_ret = recv_cb(param, (uint8_t *)resp_info.body_ptr, resp_info.body_len, offset, content_len);
         if (user_ret != 0) {
-            hal_log_err(" recv_cb error, exit download!");
+            hal_log_err("recv_cb error, exit download!");
             ret = -1;
             goto exit;
         }
-        offset += len;
-        size -= len;
+        offset += resp_info.body_len;
+        size -= resp_info.body_len;
     }
 
     while (!user_ret && size > 0) {
-        ret = network->read(network, (uint8_t *)buf, HTTP_DEFAULT_BUF_SIZE, HTTP_DEFAULT_TIMEOUT*3); //try 15s to read
+        ret = network->read(network, (uint8_t *)buf, HTTP_DEFAULT_BUF_SIZE, HTTP_DEFAULT_TIMEOUT * 3);
         if (ret <= 0) {
-            //if (ret == 0) continue;
             hal_log_debug("network read ret(%d), break", ret);
             ret = -1;
             goto exit;
         }
         user_ret = recv_cb(param, (uint8_t *)buf, ret, offset, content_len);
         if (user_ret != 0) {
-            hal_log_err(" recv_cb error, exit download!");
+            hal_log_err("recv_cb error, exit download!");
             ret = -1;
             goto exit;
         }
@@ -295,7 +575,6 @@ exit:
     return ret;
 }
 
-// 新增：自定义HTTP请求接口的辅助函数
 static int _http_send_custom_header(network_t *network, char *buf, const char *method,
                                    const char *url, const char *headers, int content_len)
 {
@@ -367,8 +646,8 @@ int hal_http_request(const char *method, const char *url, int opt_port,
     }
 
     // 发送HTTP请求头
-    int content_len = (body && body_len > 0) ? body_len : 0;
-    ret = _http_send_custom_header(network, buf, method, url, headers, content_len);
+    int req_content_len = (body && body_len > 0) ? body_len : 0;
+    ret = _http_send_custom_header(network, buf, method, url, headers, req_content_len);
     if (ret != 0)
         goto exit;
 
@@ -382,44 +661,28 @@ int hal_http_request(const char *method, const char *url, int opt_port,
         }
     }
 
-    // 接收响应
-    char *data_ptr;
-    int len;
-    ret = _http_recv_response(network, buf, &data_ptr, &len);
+    http_response_info_t resp_info;
+    ret = _http_recv_header(network, buf, &resp_info);
     if (ret != 0)
         goto exit;
 
-    // 如果提供了回调函数，处理响应数据
-    if (recv_cb) {
-        int user_ret = 0;
-        int offset = 0;
-        
-        // 解析Content-Length（如果存在）
-        int content_len = 0;
-        char *tmp_ptr = strstr(buf, Content_Length);
-        if (tmp_ptr) {
-            content_len = atoi(tmp_ptr + sizeof(Content_Length) - 1);
-            hal_log_debug("content_len = %d", content_len);
-        }
+    char *data_ptr = NULL;
+    int len = 0;
+    ret = _http_recv_body_into_buf(network, buf, &resp_info, &data_ptr, &len);
+    if (ret != 0)
+        goto exit;
 
-        // 处理已接收的数据
-        if (len > 0) {
-            user_ret = recv_cb(param, (uint8_t *)data_ptr, len, offset, content_len);
-            offset += len;
-            content_len -= len;
-        }
+    if (recv_cb == NULL) {
+        ret = 0;
+        goto exit;
+    }
 
-        // 继续接收剩余数据
-        while (!user_ret && content_len > 0) {
-            ret = network->read(network, (uint8_t *)buf, HTTP_DEFAULT_BUF_SIZE, HTTP_DEFAULT_TIMEOUT);
-            if (ret <= 0) {
-                hal_log_debug("network read ret(%d), break", ret);
-                ret = -1;
-                goto exit;
-            }
-            user_ret = recv_cb(param, (uint8_t *)buf, ret, offset, content_len + offset);
-            offset += ret;
-            content_len -= ret;
+    if (len > 0) {
+        int user_ret = recv_cb(param, (uint8_t *)data_ptr, len, 0, len);
+        if (user_ret != 0) {
+            hal_log_err("recv_cb error, exit request");
+            ret = -1;
+            goto exit;
         }
     }
 
