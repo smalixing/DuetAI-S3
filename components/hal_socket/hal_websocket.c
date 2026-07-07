@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <ctype.h>
 
+#include "mbedtls/sha1.h"
+#include "mbedtls/base64.h"
+
 
 #define WS_FIN                      0x80
 #define WS_OPCODE_CONT              0x00
@@ -25,6 +28,54 @@
 
 #define WS_READ_MAX_TIMEOUT         5000 //ms
 
+#define WS_CLIENT_KEY               "w4v7O6xFTi36lq3RNcgctw=="
+#define WS_GUID                     "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+static int _ws_check_accept(const char *response)
+{
+    const char *p = strcasestr(response, "Sec-WebSocket-Accept:");
+    if (p == NULL) {
+        hal_log_err("handshake Sec-WebSocket-Accept not found");
+        return -1;
+    }
+    p += strlen("Sec-WebSocket-Accept:");
+    while (*p == ' ' || *p == '\t')
+        p++;
+
+    /* isolate the field value (up to CR/LF) */
+    char server_accept[64];
+    int i = 0;
+    while (p[i] && p[i] != '\r' && p[i] != '\n' && i < (int)sizeof(server_accept) - 1) {
+        server_accept[i] = p[i];
+        i++;
+    }
+    server_accept[i] = 0;
+
+    /* expected = base64(sha1(client_key + GUID)) */
+    unsigned char sha1_out[20];
+    if (mbedtls_sha1((const unsigned char *)(WS_CLIENT_KEY WS_GUID),
+                     strlen(WS_CLIENT_KEY WS_GUID), sha1_out) != 0) {
+        hal_log_err("handshake sha1 failed");
+        return -1;
+    }
+
+    char expected[32];
+    size_t olen = 0;
+    if (mbedtls_base64_encode((unsigned char *)expected, sizeof(expected), &olen,
+                              sha1_out, sizeof(sha1_out)) != 0) {
+        hal_log_err("handshake base64 failed");
+        return -1;
+    }
+    expected[olen] = 0;
+
+    if (strcmp(server_accept, expected) != 0) {
+        hal_log_err("handshake Accept mismatch, got(%s) want(%s)", server_accept, expected);
+        return -1;
+    }
+
+    return 0;
+}
 
 static int _ws_handshake(network_t *pNetwork, const char *host, int port, char *path, uint32_t timeout_ms)
 {
@@ -35,7 +86,7 @@ static int _ws_handshake(network_t *pNetwork, const char *host, int port, char *
                          "host: %s:%d\r\n"
                          "Upgrade: websocket\r\n"
                          "Sec-WebSocket-Version: 13\r\n"
-                         "Sec-WebSocket-Key: %s\r\n\r\n", path, host, port, "w4v7O6xFTi36lq3RNcgctw==");
+                         "Sec-WebSocket-Key: %s\r\n\r\n", path, host, port, WS_CLIENT_KEY);
 
     if (len >= sizeof(buf)) {
         hal_log_err("handshake buf size(%d) is too small for header(%d)", sizeof(buf), len);
@@ -59,8 +110,7 @@ static int _ws_handshake(network_t *pNetwork, const char *host, int port, char *
         hal_log_debug("handshake recv(%d):\n%s", len, buf);
     } while (NULL == strstr(buf, "\r\n\r\n") && len < sizeof(buf) - 1);
 
-    if (strcasestr(buf, "Sec-WebSocket-Accept:") == NULL) {
-        hal_log_err("handshake Sec-WebSocket-Accept not found");
+    if (_ws_check_accept(buf) != 0) {
         return -1;
     }
 
@@ -84,11 +134,19 @@ void *hal_ws_connect(const char *url, int opt_port, const tls_param_t *tls_param
 
     if (tls_param || !strcmp(scheme, "wss")) {
         pNetwork = network_new(NETWORK_TLS);
+        if (pNetwork == NULL) {
+            hal_log_err("network_new(TLS) fail");
+            return NULL;
+        }
         network_tls_set_params(pNetwork, tls_param);
         if (port == 0)
             port = 443;
     } else {
         pNetwork = network_new(NETWORK_TCP);
+        if (pNetwork == NULL) {
+            hal_log_err("network_new(TCP) fail");
+            return NULL;
+        }
         if (port == 0)
             port = 80;
     }
@@ -198,14 +256,14 @@ static int _ws_handle_control_frame(network_t *pNetwork, uint32_t timeout_ms, ui
     uint8_t buf[512];
     if (payload_len > sizeof(buf)) {
         hal_log_err("Not enough room for reading control frames (need=%d, max_allowed=%d)", payload_len, sizeof(buf));
-        return -1;
+        return HAL_WS_ERR;
     }
 
     if (payload_len) {
         int ret = network_read_len(pNetwork, buf, payload_len, timeout_ms);
         if (ret != payload_len) {
             hal_log_err("Control frame (opcode=%d) payload read failed (payload_len=%d, read_len=%d)", opcode, payload_len, ret);
-            return -1;
+            return HAL_WS_ERR;
         }
         buf[sizeof(buf) - 1] = 0;
         hal_log_debug("Control frame (opcode=%d) (payload_len=%d):\n%s", opcode, payload_len, buf);
@@ -215,29 +273,29 @@ static int _ws_handle_control_frame(network_t *pNetwork, uint32_t timeout_ms, ui
         int ret = _ws_write(pNetwork, WS_OPCODE_PONG | WS_FIN, 0, buf, payload_len, timeout_ms);
         if (ret != 0) {
             hal_log_err("PONG send failed");
-            return -1;
+            return HAL_WS_ERR;
         }
         hal_log_debug("PONG sent correctly (payload_len=%d)", payload_len);
-        return 0;
+        return HAL_WS_CONTROL;
     } else if (opcode == WS_OPCODE_CLOSE) {
         // handle CLOSE by the server: send a zero payload frame
-        if (payload_len > 0) {     // if some payload, print out the status code
-            uint16_t *code = (uint16_t *) buf;
-            hal_log_info("Got CLOSE frame with status code=%u", *code);
+        if (payload_len >= 2) {     // if some payload, print out the status code
+            uint16_t code = (buf[0] << 8) | buf[1];
+            hal_log_info("Got CLOSE frame with status code=%u", code);
         }
 
         if (_ws_write(pNetwork, WS_OPCODE_CLOSE | WS_FIN, 0, NULL,0, timeout_ms) != 0) {
             hal_log_err("Sending CLOSE frame with 0 payload failed");
-            return -1;
+            return HAL_WS_ERR;
         }
         hal_log_debug("CLOSE frame with no payload sent correctly");
-        return 1;
+        return HAL_WS_CLOSED;
     } else if (opcode == WS_OPCODE_PONG) {
         hal_log_debug("Received PONG frame with payload=%d", payload_len);
-        return 0;
+        return HAL_WS_CONTROL;
     }
     hal_log_info("unkown opcode %d", opcode);
-    return 0;
+    return HAL_WS_CONTROL;
 }
 
 int hal_ws_read(void *ctx, uint8_t *buf, int len, uint32_t timeout_ms)
@@ -248,14 +306,15 @@ int hal_ws_read(void *ctx, uint8_t *buf, int len, uint32_t timeout_ms)
     uint8_t *data_ptr = ws_header;
 
     int headerLen = 2;
-    int ret = pNetwork->read(pNetwork, ws_header, headerLen, timeout_ms);
+    int ret = network_read_len(pNetwork, ws_header, headerLen, timeout_ms);
     if (ret == 0) {
-        return 0;
+        return HAL_WS_CLOSED;
     } else if ((ret < 0) || (ret != headerLen)) {
         hal_log_err("read header err, ret=%d", ret);
-        return -1;
+        return HAL_WS_ERR;
     }
 
+    uint8_t fin = (ws_header[0] >> 7) & 0x01;
     uint8_t opcode = ws_header[0] & 0x0f;
     uint8_t mask = (ws_header[1] >> 7) & 0x01;
     uint32_t payload_len = ws_header[1] & 0x7f;
@@ -264,35 +323,38 @@ int hal_ws_read(void *ctx, uint8_t *buf, int len, uint32_t timeout_ms)
 
     if (payload_len == 126) {
         headerLen = 2;
-        ret = pNetwork->read(pNetwork, data_ptr, headerLen, timeout_ms);
+        ret = network_read_len(pNetwork, data_ptr, headerLen, timeout_ms);
         if (ret != headerLen) {
             hal_log_err("read extend_len(%d) error, ret = %d", headerLen, ret);
-            return -1;
+            return HAL_WS_ERR;
         }
         payload_len = data_ptr[0] << 8 | data_ptr[1];
     } else if (payload_len == 127) {
         headerLen = 8;
-        ret = pNetwork->read(pNetwork, data_ptr, headerLen, timeout_ms);
+        ret = network_read_len(pNetwork, data_ptr, headerLen, timeout_ms);
         if (ret != headerLen) {
             hal_log_err("read extend_len(%d) error, ret = %d", headerLen, ret);
-            return -1;
+            return HAL_WS_ERR;
         }
         if (data_ptr[0] != 0 || data_ptr[1] != 0 || data_ptr[2] != 0 || data_ptr[3] != 0) {
             hal_log_err("payload_len is too big");
-            return -1;
+            return HAL_WS_ERR;
         } else {
-            payload_len = data_ptr[4] << 24 | data_ptr[5] << 16 | data_ptr[6] << 8 | data_ptr[7];
+            payload_len = (uint32_t)data_ptr[4] << 24 | (uint32_t)data_ptr[5] << 16 | (uint32_t)data_ptr[6] << 8 | data_ptr[7];
         }
     }
     //hal_log_debug("Opcode: %d, mask: %d, len: %d", opcode, mask, payload_len);
 
     if (mask) {
         hal_log_err("server -> client, mask flag set");
-        return -1;
+        return HAL_WS_ERR;
     }
 
     if (opcode & WS_OPCODE_CONTROL_FRAME)
         return _ws_handle_control_frame(pNetwork, WS_READ_MAX_TIMEOUT, payload_len, opcode);
+
+    if (!fin || opcode == WS_OPCODE_CONT)
+        hal_log_warn("fragmented frame not supported (fin=%d, opcode=%d), treated as standalone", fin, opcode);
 
     uint32_t drop_len = 0;
 
@@ -306,7 +368,7 @@ int hal_ws_read(void *ctx, uint8_t *buf, int len, uint32_t timeout_ms)
         ret = network_read_len(pNetwork, buf, payload_len, WS_READ_MAX_TIMEOUT);
         if (ret != payload_len) {
             hal_log_err("read payload_len err, ret=%d, want=%d", ret, payload_len);
-            return -1;
+            return HAL_WS_ERR;
         }
     }
 
@@ -326,7 +388,7 @@ int hal_ws_read(void *ctx, uint8_t *buf, int len, uint32_t timeout_ms)
         }
         if (drop_len) {
             hal_log_err("read payload_len(drop) err, remain=%d", drop_len);
-            return -1;
+            return HAL_WS_ERR;
         }
     }
 
