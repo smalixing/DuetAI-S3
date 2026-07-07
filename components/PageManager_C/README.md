@@ -26,16 +26,16 @@ class PageManager {
 
 **C版本：**
 ```c
-typedef struct PageBase {
-    const PageVTable_t* vtable;  // 虚函数表指针
+typedef struct pm_page_base {
+    const pm_page_vtable_t* vtable;  // 虚函数表指针
     // 其他成员...
-} PageBase_t;
+} pm_page_base_t;
 
-typedef struct PageManager {
-    PageArray_t pool;  // 动态数组替代vector
-    PageArray_t stack; // 动态数组替代stack
+typedef struct pm_manager {
+    pm_page_array_t pool;  // 动态数组替代vector
+    pm_page_array_t stack; // 动态数组替代stack
     // 其他成员...
-} PageManager_t;
+} pm_manager_t;
 ```
 
 ### 2.2 虚函数到函数指针的转换
@@ -49,10 +49,10 @@ virtual void on_view_will_appear() {}
 **C版本：**
 ```c
 typedef struct {
-    void (*on_view_load)(PageBase_t* self);
-    void (*on_view_will_appear)(PageBase_t* self);
+    void (*on_view_load)(pm_page_base_t* self);
+    void (*on_view_will_appear)(pm_page_base_t* self);
     // ...
-} PageVTable_t;
+} pm_page_vtable_t;
 ```
 
 ### 2.3 容器到动态数组的转换
@@ -66,15 +66,15 @@ std::stack<PageBase*> _PageStack;
 **C版本：**
 ```c
 typedef struct {
-    PageBase_t** data;
+    pm_page_base_t** data;
     uint32_t     size;
     uint32_t     capacity;
-} PageArray_t;
+} pm_page_array_t;
 ```
 
 ## 3. 核心功能实现
 
-### 3.1 路由功能 (PM_Router.c)
+### 3.1 路由功能 (pm_router.c)
 
 实现了与C++版本相同的路由功能：
 
@@ -85,13 +85,13 @@ typedef struct {
 - **BackHome**：返回首页
 
 ```c
-bool page_manager_push(PageManager_t* self, const char* name, const PageStash_t* stash);
-bool page_manager_pop(PageManager_t* self);
-bool page_manager_replace(PageManager_t* self, const char* name, const PageStash_t* stash);
-bool page_manager_back_home(PageManager_t* self);
+bool page_manager_push(pm_manager_t* self, const char* name, const pm_page_stash_t* stash);
+bool page_manager_pop(pm_manager_t* self);
+bool page_manager_replace(pm_manager_t* self, const char* name, const pm_page_stash_t* stash);
+bool page_manager_back_home(pm_manager_t* self);
 ```
 
-### 3.2 拖拽功能 (PM_Drag.c)
+### 3.2 拖拽功能 (pm_drag.c)
 
 实现了完整的拖拽手势处理：
 
@@ -101,21 +101,21 @@ bool page_manager_back_home(PageManager_t* self);
 - **async navigation**：异步导航
 
 ```c
-void page_manager_root_enable_drag(PageManager_t* self, lv_obj_t* root);
-/* 惯性预测为 PM_Drag.c 内部静态函数 pm_root_get_drag_predict() */
+void page_manager_root_enable_drag(pm_manager_t* self, lv_obj_t* root);
+/* 惯性预测为 pm_drag.c 内部静态函数 pm_root_get_drag_predict() */
 ```
 
 ## 4. 内存管理
 
 ### 4.1 动态数组管理
 
-使用自定义的`PageArray_t`结构管理动态数组：
+使用自定义的`pm_page_array_t`结构管理动态数组：
 
 ```c
-bool page_array_push(PageArray_t* arr, PageBase_t* p); /* 导出: PM_Router.c 使用 */
-static void page_array_pop(PageArray_t* arr);
-static PageBase_t* page_array_top(const PageArray_t* arr);
-static bool page_array_reserve(PageArray_t* arr, uint32_t need);
+bool page_array_push(pm_page_array_t* arr, pm_page_base_t* p); /* 导出: pm_router.c 使用 */
+static void page_array_pop(pm_page_array_t* arr);
+static pm_page_base_t* page_array_top(const pm_page_array_t* arr);
+static bool page_array_reserve(pm_page_array_t* arr, uint32_t need);
 ```
 
 ### 4.2 缓存机制
@@ -135,12 +135,12 @@ static bool page_array_reserve(PageArray_t* arr, uint32_t need);
 ```c
 // 发送参数
 int value = 42;
-page_manager_push(manager, "TargetPage", &(PageStash_t){&value, sizeof(value)});
+page_manager_push(manager, "TargetPage", &(pm_page_stash_t){&value, sizeof(value)});
 
 // 接收参数
-void on_view_load(PageBase_t* self) {
+void on_view_load(pm_page_base_t* self) {
     int received_value;
-    PAGE_STASH_POP(self, received_value);
+    PM_PAGE_STASH_POP(self, received_value);
     // 使用received_value
 }
 ```
@@ -167,16 +167,16 @@ memcpy(buffer, stash->ptr, stash->size);
 
 ### 6.2 动画属性
 
-使用`LoadAnimAttr_t`结构定义动画属性：
+使用`pm_load_anim_attr_t`结构定义动画属性：
 
 ```c
 typedef struct {
     pm_anim_setter_t setter;     // 动画setter函数
     pm_anim_getter_t getter;     // 动画getter函数
-    RootDragDir_t    drag_dir;    // 拖拽方向
-    AnimValue_t      push;       // 推入动画值
-    AnimValue_t      pop;        // 弹出动画值
-} LoadAnimAttr_t;
+    pm_root_drag_dir_t    drag_dir;    // 拖拽方向
+    pm_anim_value_t      push;       // 推入动画值
+    pm_anim_value_t      pop;        // 弹出动画值
+} pm_load_anim_attr_t;
 ```
 
 ## 7. 状态机
@@ -187,16 +187,16 @@ typedef struct {
 
 ```c
 typedef enum {
-    PAGE_STATE_IDLE,
-    PAGE_STATE_LOAD,
-    PAGE_STATE_WILL_APPEAR,
-    PAGE_STATE_DID_APPEAR,
-    PAGE_STATE_ACTIVITY,
-    PAGE_STATE_WILL_DISAPPEAR,
-    PAGE_STATE_DID_DISAPPEAR,
-    PAGE_STATE_UNLOAD,
-    _PAGE_STATE_LAST
-} PageState_t;
+    PM_PAGE_STATE_IDLE,
+    PM_PAGE_STATE_LOAD,
+    PM_PAGE_STATE_WILL_APPEAR,
+    PM_PAGE_STATE_DID_APPEAR,
+    PM_PAGE_STATE_ACTIVITY,
+    PM_PAGE_STATE_WILL_DISAPPEAR,
+    PM_PAGE_STATE_DID_DISAPPEAR,
+    PM_PAGE_STATE_UNLOAD,
+    _PM_PAGE_STATE_LAST
+} pm_page_state_t;
 ```
 
 ### 7.2 状态转换
@@ -204,7 +204,7 @@ typedef enum {
 通过`page_manager_state_update`函数管理状态转换：
 
 ```c
-void page_manager_state_update(PageManager_t* self, PageBase_t* base);
+void page_manager_state_update(pm_manager_t* self, pm_page_base_t* base);
 ```
 
 ## 8. 错误处理
@@ -237,21 +237,21 @@ if (base == NULL) {
 
 `demo/` 目录提供了一个完整的、基于 LVGL UI 的两页面示例，演示页面实现、工厂注册、Push/Pop/Replace/BackHome 导航以及 stash 参数传递：
 
-- `demo/PageManager_C_Demo.h` —— 对外入口声明
-- `demo/PageManager_C_Demo.c` —— HomePage + DetailPage 两个具体页面、工厂与导航逻辑
+- `demo/page_manager_c_demo.h` —— 对外入口声明
+- `demo/page_manager_c_demo.c` —— HomePage + DetailPage 两个具体页面、工厂与导航逻辑
 
 集成方式：在应用初始化处调用 `page_manager_c_demo_start();`，退出时调用 `page_manager_c_demo_stop();`。
 
 ```c
-#include "PageManager_C/demo/PageManager_C_Demo.h"
+#include "PageManager_C/demo/page_manager_c_demo.h"
 
 page_manager_c_demo_start();   /* 显示 Home 页，按钮驱动后续导航 */
 /* ... */
 page_manager_c_demo_stop();    /* 清栈、卸载页面、释放管理器 */
 ```
 
-> 注意：示例的 `.c` 文件用相对路径 `#include "../PageManager.h"` 引用 C 版头文件，
-> 以避免与工程中同名的 C++ 版 `PageManager.h`（其 `-I` 路径已在 Makefile 中）发生冲突。
+> 注意：示例的 `.c` 文件用相对路径 `#include "../page_manager.h"` 引用 C 版头文件，
+> 以避免与工程中同名的 C++ 版 `page_manager.h`（其 `-I` 路径已在 Makefile 中）发生冲突。
 > 页面对象由工厂用 `lv_mem_alloc` 分配，并在 `on_destroy` 回调里用 `lv_mem_free` 释放
 > （`page_manager_uninstall` 只调用 `on_destroy`，不会自动释放页面本身）。
 
@@ -259,12 +259,12 @@ page_manager_c_demo_stop();    /* 清栈、卸载页面、释放管理器 */
 
 ```c
 // 创建页面工厂
-PageFactory_t my_factory = {
+pm_factory_t my_factory = {
     .create = my_create_page_function
 };
 
 // 初始化页面管理器
-PageManager_t manager;
+pm_manager_t manager;
 page_manager_init(&manager, &my_factory);
 
 // 安装页面
@@ -282,17 +282,17 @@ page_manager_replace(&manager, "SettingsPage", NULL);
 
 ```c
 // 定义页面虚函数表
-static void my_page_on_view_load(PageBase_t* self) {
+static void my_page_on_view_load(pm_page_base_t* self) {
     // 页面加载逻辑
 }
 
-static const PageVTable_t my_page_vtable = {
+static const pm_page_vtable_t my_page_vtable = {
     .on_view_load = my_page_on_view_load,
     // 其他回调函数...
 };
 
 // 创建页面实例
-static PageBase_t my_page_instance = {
+static pm_page_base_t my_page_instance = {
     .vtable = &my_page_vtable,
     .name = "MyPage",
     // 其他初始化...

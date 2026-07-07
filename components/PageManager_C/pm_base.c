@@ -2,15 +2,15 @@
  * MIT License
  * C-language port of PageManager - base / lifecycle / pool / stack.
  */
-#include "PageManager.h"
-#include "PM_Log.h"
+#include "page_manager.h"
+#include "pm_log.h"
 #include <stdlib.h>
 #include <string.h>
 
 #define PM_EMPTY_PAGE_NAME "EMPTY_PAGE"
 
 /* ------------------------------------------------------------------ */
-/* PageArray_t helpers                                         */
+/* pm_page_array_t helpers                                         */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -20,7 +20,7 @@
  * @param  arr  Pointer to the array descriptor to initialise.
  * @retval None
  */
-static void page_array_init(PageArray_t* arr)
+static void page_array_init(pm_page_array_t* arr)
 {
     arr->data = NULL;
     arr->size = 0;
@@ -29,14 +29,14 @@ static void page_array_init(PageArray_t* arr)
 
 /**
  * @brief  Release the storage owned by a page array.
- * @note   Only the backing pointer buffer is freed; the PageBase_t objects
+ * @note   Only the backing pointer buffer is freed; the pm_page_base_t objects
  *         the array points to are NOT destroyed (they are owned by the page
  *         pool / factory). The descriptor is reset to the empty state so it
  *         can be reused safely.
  * @param  arr  Pointer to the array descriptor to release.
  * @retval None
  */
-static void page_array_deinit(PageArray_t* arr)
+static void page_array_deinit(pm_page_array_t* arr)
 {
     if (arr->data) {
         lv_mem_free(arr->data);
@@ -57,7 +57,7 @@ static void page_array_deinit(PageArray_t* arr)
  * @retval true  Capacity is now >= @p need.
  * @retval false Allocation failed (out of memory); array left unchanged.
  */
-static bool page_array_reserve(PageArray_t* arr, uint32_t need)
+static bool page_array_reserve(pm_page_array_t* arr, uint32_t need)
 {
     if (need <= arr->capacity) {
         return true;
@@ -65,13 +65,13 @@ static bool page_array_reserve(PageArray_t* arr, uint32_t need)
     uint32_t new_cap = arr->capacity ? arr->capacity * 2 : 4;
     while (new_cap < need) new_cap *= 2;
 
-    PageBase_t** new_buf = (PageBase_t**)lv_mem_alloc(new_cap * sizeof(PageBase_t*));
+    pm_page_base_t** new_buf = (pm_page_base_t**)lv_mem_alloc(new_cap * sizeof(pm_page_base_t*));
     if (new_buf == NULL) {
         PM_LOG_ERROR("page_array_reserve: oom");
         return false;
     }
     if (arr->data) {
-        memcpy(new_buf, arr->data, arr->size * sizeof(PageBase_t*));
+        memcpy(new_buf, arr->data, arr->size * sizeof(pm_page_base_t*));
         lv_mem_free(arr->data);
     }
     arr->data = new_buf;
@@ -83,14 +83,14 @@ static bool page_array_reserve(PageArray_t* arr, uint32_t need)
  * @brief  Append a page pointer to the end of the array.
  * @note   Reserves room for one more element first, then stores @p p and
  *         increments the size. This is the array's "push_back" / stack-push.
- *         Exposed (non-static) because PM_Router.c pushes onto the stack
+ *         Exposed (non-static) because pm_router.c pushes onto the stack
  *         while the array implementation lives here.
  * @param  arr  Pointer to the array descriptor.
  * @param  p    Page pointer to append.
  * @retval true  The page was stored.
  * @retval false Allocation failed; array left unchanged.
  */
-bool page_array_push(PageArray_t* arr, PageBase_t* p)
+bool page_array_push(pm_page_array_t* arr, pm_page_base_t* p)
 {
     if (!page_array_reserve(arr, arr->size + 1)) return false;
     arr->data[arr->size++] = p;
@@ -104,7 +104,7 @@ bool page_array_push(PageArray_t* arr, PageBase_t* p)
  * @param  arr  Pointer to the array descriptor.
  * @retval None
  */
-static void page_array_pop(PageArray_t* arr)
+static void page_array_pop(pm_page_array_t* arr)
 {
     if (arr->size > 0) arr->size--;
 }
@@ -114,7 +114,7 @@ static void page_array_pop(PageArray_t* arr)
  * @param  arr  Pointer to the array descriptor.
  * @retval Pointer to the top page, or NULL if the array is empty.
  */
-static PageBase_t* page_array_top(const PageArray_t* arr)
+static pm_page_base_t* page_array_top(const pm_page_array_t* arr)
 {
     return arr->size ? arr->data[arr->size - 1] : NULL;
 }
@@ -129,7 +129,7 @@ static PageBase_t* page_array_top(const PageArray_t* arr)
  * @retval true  The pointer was found and removed.
  * @retval false The pointer was not present in the array.
  */
-static bool page_array_erase(PageArray_t* arr, PageBase_t* p)
+static bool page_array_erase(pm_page_array_t* arr, pm_page_base_t* p)
 {
     for (uint32_t i = 0; i < arr->size; i++) {
         if (arr->data[i] == p) {
@@ -158,7 +158,7 @@ static bool page_array_erase(PageArray_t* arr, PageBase_t* p)
  * @param  factory  Page factory used by Install(), or NULL.
  * @retval None
  */
-void page_manager_init(PageManager_t* self, PageFactory_t* factory)
+void page_manager_init(pm_manager_t* self, pm_factory_t* factory)
 {
     if (self == NULL) return;
     memset(self, 0, sizeof(*self));
@@ -166,18 +166,18 @@ void page_manager_init(PageManager_t* self, PageFactory_t* factory)
     page_array_init(&self->pool);
     page_array_init(&self->stack);
 
-    page_manager_set_global_load_anim_type(self, LOAD_ANIM_OVER_LEFT, 500, lv_anim_path_ease_out);
+    page_manager_set_global_load_anim_type(self, PM_LOAD_ANIM_OVER_LEFT, 500, lv_anim_path_ease_out);
 }
 
 /**
  * @brief  Destruct a page manager instance.
  * @note   Clears the page stack (running each page's full unload life cycle)
  *         and frees the pool/stack backing buffers. Does not free the
- *         PageManager_t struct itself, which the caller owns.
+ *         pm_manager_t struct itself, which the caller owns.
  * @param  self  Pointer to the page manager to tear down.
  * @retval None
  */
-void page_manager_deinit(PageManager_t* self)
+void page_manager_deinit(pm_manager_t* self)
 {
     if (self == NULL) return;
     page_manager_set_stack_clear(self, false);
@@ -198,11 +198,11 @@ void page_manager_deinit(PageManager_t* self)
  * @param  name  Application name of the page to find.
  * @retval Pointer to the matching page, or NULL if not found / bad args.
  */
-PageBase_t* page_manager_find_page_in_pool(PageManager_t* self, const char* name)
+pm_page_base_t* page_manager_find_page_in_pool(pm_manager_t* self, const char* name)
 {
     if (self == NULL || name == NULL) return NULL;
     for (uint32_t i = 0; i < self->pool.size; i++) {
-        PageBase_t* p = self->pool.data[i];
+        pm_page_base_t* p = self->pool.data[i];
         if (p && p->name && strcmp(name, p->name) == 0) {
             return p;
         }
@@ -218,11 +218,11 @@ PageBase_t* page_manager_find_page_in_pool(PageManager_t* self, const char* name
  * @param  name  Application name of the page to find.
  * @retval Pointer to the matching page, or NULL if not on the stack / bad args.
  */
-PageBase_t* page_manager_find_page_in_stack(PageManager_t* self, const char* name)
+pm_page_base_t* page_manager_find_page_in_stack(pm_manager_t* self, const char* name)
 {
     if (self == NULL || name == NULL) return NULL;
     for (uint32_t i = 0; i < self->stack.size; i++) {
-        PageBase_t* p = self->stack.data[i];
+        pm_page_base_t* p = self->stack.data[i];
         if (p && p->name && strcmp(name, p->name) == 0) {
             return p;
         }
@@ -235,7 +235,7 @@ PageBase_t* page_manager_find_page_in_stack(PageManager_t* self, const char* nam
  * @param  self  Pointer to the page manager.
  * @retval Pointer to the top page, or NULL if the stack is empty / bad arg.
  */
-PageBase_t* page_manager_get_stack_top(PageManager_t* self)
+pm_page_base_t* page_manager_get_stack_top(pm_manager_t* self)
 {
     return self ? page_array_top(&self->stack) : NULL;
 }
@@ -249,7 +249,7 @@ PageBase_t* page_manager_get_stack_top(PageManager_t* self)
  * @retval Pointer to the second-from-top page, or NULL if fewer than two
  *         pages are on the stack / bad arg.
  */
-PageBase_t* page_manager_get_stack_top_after(PageManager_t* self)
+pm_page_base_t* page_manager_get_stack_top_after(pm_manager_t* self)
 {
     if (self == NULL || self->stack.size < 2) return NULL;
     return self->stack.data[self->stack.size - 2];
@@ -272,7 +272,7 @@ PageBase_t* page_manager_get_stack_top_after(PageManager_t* self)
  * @retval true  The page was created and registered.
  * @retval false No factory, duplicate name, or factory could not create it.
  */
-bool page_manager_install(PageManager_t* self, const char* class_name, const char* app_name)
+bool page_manager_install(pm_manager_t* self, const char* class_name, const char* app_name)
 {
     if (self == NULL) return false;
 
@@ -291,7 +291,7 @@ bool page_manager_install(PageManager_t* self, const char* class_name, const cha
         return false;
     }
 
-    PageBase_t* base = page_factory_create_page(self->factory, class_name);
+    pm_page_base_t* base = page_factory_create_page(self->factory, class_name);
     if (base == NULL) {
         PM_LOG_ERROR("Factory has not %s", class_name);
         return false;
@@ -327,12 +327,12 @@ bool page_manager_install(PageManager_t* self, const char* class_name, const cha
  * @retval true  The page was unregistered and destroyed.
  * @retval false Page not found, or it could not be unregistered.
  */
-bool page_manager_uninstall(PageManager_t* self, const char* app_name)
+bool page_manager_uninstall(pm_manager_t* self, const char* app_name)
 {
     if (self == NULL) return false;
     PM_LOG_INFO("Page(%s) uninstall...", app_name);
 
-    PageBase_t* base = page_manager_find_page_in_pool(self, app_name);
+    pm_page_base_t* base = page_manager_find_page_in_pool(self, app_name);
     if (base == NULL) {
         PM_LOG_ERROR("Page(%s) was not found", app_name);
         return false;
@@ -345,7 +345,7 @@ bool page_manager_uninstall(PageManager_t* self, const char* app_name)
 
     if (base->priv.is_cached) {
         PM_LOG_WARN("Page(%s) has cached, unloading...", app_name);
-        base->priv.state = PAGE_STATE_UNLOAD;
+        base->priv.state = PM_PAGE_STATE_UNLOAD;
         page_manager_state_update(self, base);
     } else {
         PM_LOG_INFO("Page(%s) has not cache", app_name);
@@ -370,7 +370,7 @@ bool page_manager_uninstall(PageManager_t* self, const char* app_name)
  * @retval true  The page was added to the pool.
  * @retval false Bad args, duplicate name, or allocation failed.
  */
-bool page_manager_register(PageManager_t* self, PageBase_t* base, const char* name)
+bool page_manager_register(pm_manager_t* self, pm_page_base_t* base, const char* name)
 {
     if (self == NULL || base == NULL || name == NULL) return false;
 
@@ -398,12 +398,12 @@ bool page_manager_register(PageManager_t* self, PageBase_t* base, const char* na
  * @retval true  The page was removed from the pool.
  * @retval false Bad args, page in stack, or page not found in pool.
  */
-bool page_manager_unregister(PageManager_t* self, const char* name)
+bool page_manager_unregister(pm_manager_t* self, const char* name)
 {
     if (self == NULL || name == NULL) return false;
     PM_LOG_INFO("Page(%s) unregister...", name);
 
-    PageBase_t* base = page_manager_find_page_in_stack(self, name);
+    pm_page_base_t* base = page_manager_find_page_in_stack(self, name);
     if (base != NULL) {
         PM_LOG_ERROR("Page(%s) was in stack", name);
         return false;
@@ -439,18 +439,18 @@ bool page_manager_unregister(PageManager_t* self, const char* name)
  * @param  keep_bottom  true to keep the stack's bottom (home) page.
  * @retval None
  */
-void page_manager_set_stack_clear(PageManager_t* self, bool keep_bottom)
+void page_manager_set_stack_clear(pm_manager_t* self, bool keep_bottom)
 {
     if (self == NULL) return;
 
     while (1) {
-        PageBase_t* top = page_manager_get_stack_top(self);
+        pm_page_base_t* top = page_manager_get_stack_top(self);
         if (top == NULL) {
             PM_LOG_INFO("Page stack is empty, breaking...");
             break;
         }
 
-        PageBase_t* top_after = page_manager_get_stack_top_after(self);
+        pm_page_base_t* top_after = page_manager_get_stack_top_after(self);
 
         if (top_after == NULL) {
             if (keep_bottom) {
@@ -473,7 +473,7 @@ void page_manager_set_stack_clear(PageManager_t* self, bool keep_bottom)
  * @param  self  Pointer to the page manager.
  * @retval The previous page's name, or PM_EMPTY_PAGE_NAME if there is none.
  */
-const char* page_manager_get_page_prev_name(PageManager_t* self)
+const char* page_manager_get_page_prev_name(pm_manager_t* self)
 {
     if (self == NULL) return PM_EMPTY_PAGE_NAME;
     return self->page_prev ? self->page_prev->name : PM_EMPTY_PAGE_NAME;
@@ -484,7 +484,7 @@ const char* page_manager_get_page_prev_name(PageManager_t* self)
  * @param  self  Pointer to the page manager.
  * @retval The current page's name, or PM_EMPTY_PAGE_NAME if there is none.
  */
-const char* page_manager_get_page_current_name(PageManager_t* self)
+const char* page_manager_get_page_current_name(pm_manager_t* self)
 {
     if (self == NULL) return PM_EMPTY_PAGE_NAME;
     return self->page_current ? self->page_current->name : PM_EMPTY_PAGE_NAME;
@@ -497,7 +497,7 @@ const char* page_manager_get_page_current_name(PageManager_t* self)
  * @retval true  The page is on the navigation stack.
  * @retval false The page is not on the stack (or bad args).
  */
-bool page_manager_check_pages_exist(PageManager_t* self, const char* name)
+bool page_manager_check_pages_exist(pm_manager_t* self, const char* name)
 {
     return page_manager_find_page_in_stack(self, name) != NULL;
 }
@@ -511,7 +511,7 @@ bool page_manager_check_pages_exist(PageManager_t* self, const char* name)
  * @param  style  Pointer to the LVGL style, or NULL to clear.
  * @retval None
  */
-void page_manager_set_root_default_style(PageManager_t* self, lv_style_t* style)
+void page_manager_set_root_default_style(pm_manager_t* self, lv_style_t* style)
 {
     if (self) self->root_default_style = style;
 }

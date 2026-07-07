@@ -2,8 +2,8 @@
  * MIT License
  * C-language port of PageManager - page-state machine.
  */
-#include "PageManager.h"
-#include "PM_Log.h"
+#include "page_manager.h"
+#include "pm_log.h"
 
 /**
  * @brief  Drive a page through its state machine.
@@ -18,47 +18,47 @@
  * @param  base  Pointer to the page to advance (may be NULL).
  * @retval None
  */
-void page_manager_state_update(PageManager_t* self, PageBase_t* base)
+void page_manager_state_update(pm_manager_t* self, pm_page_base_t* base)
 {
     if (self == NULL || base == NULL) return;
 
     switch (base->priv.state) {
-    case PAGE_STATE_IDLE:
+    case PM_PAGE_STATE_IDLE:
         PM_LOG_INFO("Page(%s) state idle", base->name);
         break;
 
-    case PAGE_STATE_LOAD:
+    case PM_PAGE_STATE_LOAD:
         base->priv.state = page_manager_state_load_execute(self, base);
         page_manager_state_update(self, base);
         break;
 
-    case PAGE_STATE_WILL_APPEAR:
+    case PM_PAGE_STATE_WILL_APPEAR:
         base->priv.state = page_manager_state_will_appear_execute(self, base);
         break;
 
-    case PAGE_STATE_DID_APPEAR:
+    case PM_PAGE_STATE_DID_APPEAR:
         base->priv.state = page_manager_state_did_appear_execute(self, base);
         PM_LOG_INFO("Page(%s) state active", base->name);
         break;
 
-    case PAGE_STATE_ACTIVITY:
+    case PM_PAGE_STATE_ACTIVITY:
         PM_LOG_INFO("Page(%s) state active break", base->name);
-        base->priv.state = PAGE_STATE_WILL_DISAPPEAR;
+        base->priv.state = PM_PAGE_STATE_WILL_DISAPPEAR;
         page_manager_state_update(self, base);
         break;
 
-    case PAGE_STATE_WILL_DISAPPEAR:
+    case PM_PAGE_STATE_WILL_DISAPPEAR:
         base->priv.state = page_manager_state_will_disappear_execute(self, base);
         break;
 
-    case PAGE_STATE_DID_DISAPPEAR:
+    case PM_PAGE_STATE_DID_DISAPPEAR:
         base->priv.state = page_manager_state_did_disappear_execute(self, base);
-        if (base->priv.state == PAGE_STATE_UNLOAD) {
+        if (base->priv.state == PM_PAGE_STATE_UNLOAD) {
             page_manager_state_update(self, base);
         }
         break;
 
-    case PAGE_STATE_UNLOAD:
+    case PM_PAGE_STATE_UNLOAD:
         base->priv.state = page_manager_state_unload_execute(self, base);
         break;
 
@@ -78,9 +78,9 @@ void page_manager_state_update(PageManager_t* self, PageBase_t* base)
  *         cache flag from its auto-cache configuration.
  * @param  self  Pointer to the page manager.
  * @param  base  Pointer to the page being loaded.
- * @retval Next state: PAGE_STATE_WILL_APPEAR.
+ * @retval Next state: PM_PAGE_STATE_WILL_APPEAR.
  */
-PageState_t page_manager_state_load_execute(PageManager_t* self, PageBase_t* base)
+pm_page_state_t page_manager_state_load_execute(pm_manager_t* self, pm_page_base_t* base)
 {
     PM_LOG_INFO("Page(%s) state load", base->name);
 
@@ -100,11 +100,11 @@ PageState_t page_manager_state_load_execute(PageManager_t* self, PageBase_t* bas
     PM_CALL_VFUNC(base, on_view_load);
 
     if (page_manager_get_is_over_anim(page_manager_get_current_load_anim_type(self))) {
-        PageBase_t* bottom = page_manager_get_stack_top_after(self);
+        pm_page_base_t* bottom = page_manager_get_stack_top_after(self);
         if (bottom != NULL && bottom->priv.is_cached) {
-            LoadAnimAttr_t attr;
+            pm_load_anim_attr_t attr;
             if (page_manager_get_current_load_anim_attr(self, &attr)) {
-                if (attr.drag_dir != ROOT_DRAG_DIR_NONE) {
+                if (attr.drag_dir != PM_ROOT_DRAG_DIR_NONE) {
                     page_manager_root_enable_drag(self, base->root);
                 }
             }
@@ -122,7 +122,7 @@ PageState_t page_manager_state_load_execute(PageManager_t* self, PageBase_t* bas
         base->priv.is_cached = true;
     }
 
-    return PAGE_STATE_WILL_APPEAR;
+    return PM_PAGE_STATE_WILL_APPEAR;
 }
 
 /**
@@ -132,15 +132,15 @@ PageState_t page_manager_state_load_execute(PageManager_t* self, PageBase_t* bas
  *         animation finishes.
  * @param  self  Pointer to the page manager.
  * @param  base  Pointer to the page about to appear.
- * @retval Next state: PAGE_STATE_DID_APPEAR.
+ * @retval Next state: PM_PAGE_STATE_DID_APPEAR.
  */
-PageState_t page_manager_state_will_appear_execute(PageManager_t* self, PageBase_t* base)
+pm_page_state_t page_manager_state_will_appear_execute(pm_manager_t* self, pm_page_base_t* base)
 {
     PM_LOG_INFO("Page(%s) state will appear", base->name);
     PM_CALL_VFUNC(base, on_view_will_appear);
     lv_obj_clear_flag(base->root, LV_OBJ_FLAG_HIDDEN);
     page_manager_switch_anim_create(self, base);
-    return PAGE_STATE_DID_APPEAR;
+    return PM_PAGE_STATE_DID_APPEAR;
 }
 
 /**
@@ -148,14 +148,14 @@ PageState_t page_manager_state_will_appear_execute(PageManager_t* self, PageBase
  * @note   Calls on_view_did_appear(); the page is now fully visible and active.
  * @param  self  Pointer to the page manager (unused).
  * @param  base  Pointer to the page that has appeared.
- * @retval Next state: PAGE_STATE_ACTIVITY.
+ * @retval Next state: PM_PAGE_STATE_ACTIVITY.
  */
-PageState_t page_manager_state_did_appear_execute(PageManager_t* self, PageBase_t* base)
+pm_page_state_t page_manager_state_did_appear_execute(pm_manager_t* self, pm_page_base_t* base)
 {
     (void)self;
     PM_LOG_INFO("Page(%s) state did appear", base->name);
     PM_CALL_VFUNC(base, on_view_did_appear);
-    return PAGE_STATE_ACTIVITY;
+    return PM_PAGE_STATE_ACTIVITY;
 }
 
 /**
@@ -164,14 +164,14 @@ PageState_t page_manager_state_did_appear_execute(PageManager_t* self, PageBase_
  *         DID_DISAPPEAR transition completes when that animation finishes.
  * @param  self  Pointer to the page manager.
  * @param  base  Pointer to the page about to disappear.
- * @retval Next state: PAGE_STATE_DID_DISAPPEAR.
+ * @retval Next state: PM_PAGE_STATE_DID_DISAPPEAR.
  */
-PageState_t page_manager_state_will_disappear_execute(PageManager_t* self, PageBase_t* base)
+pm_page_state_t page_manager_state_will_disappear_execute(pm_manager_t* self, pm_page_base_t* base)
 {
     PM_LOG_INFO("Page(%s) state will disappear", base->name);
     PM_CALL_VFUNC(base, on_view_will_disappear);
     page_manager_switch_anim_create(self, base);
-    return PAGE_STATE_DID_DISAPPEAR;
+    return PM_PAGE_STATE_DID_DISAPPEAR;
 }
 
 /**
@@ -181,9 +181,9 @@ PageState_t page_manager_state_will_disappear_execute(PageManager_t* self, PageB
  *         again without reloading); otherwise it proceeds to UNLOAD.
  * @param  self  Pointer to the page manager (unused).
  * @param  base  Pointer to the page that has disappeared.
- * @retval Next state: PAGE_STATE_WILL_APPEAR if cached, else PAGE_STATE_UNLOAD.
+ * @retval Next state: PM_PAGE_STATE_WILL_APPEAR if cached, else PM_PAGE_STATE_UNLOAD.
  */
-PageState_t page_manager_state_did_disappear_execute(PageManager_t* self, PageBase_t* base)
+pm_page_state_t page_manager_state_did_disappear_execute(pm_manager_t* self, pm_page_base_t* base)
 {
     (void)self;
     PM_LOG_INFO("Page(%s) state did disappear", base->name);
@@ -191,9 +191,9 @@ PageState_t page_manager_state_did_disappear_execute(PageManager_t* self, PageBa
     PM_CALL_VFUNC(base, on_view_did_disappear);
     if (base->priv.is_cached) {
         PM_LOG_INFO("Page(%s) has cached", base->name);
-        return PAGE_STATE_WILL_APPEAR;
+        return PM_PAGE_STATE_WILL_APPEAR;
     }
-    return PAGE_STATE_UNLOAD;
+    return PM_PAGE_STATE_UNLOAD;
 }
 
 /**
@@ -204,15 +204,15 @@ PageState_t page_manager_state_did_disappear_execute(PageManager_t* self, PageBa
  *         never loaded (root is NULL) it just returns to IDLE.
  * @param  self  Pointer to the page manager (unused).
  * @param  base  Pointer to the page being unloaded.
- * @retval Next state: PAGE_STATE_IDLE.
+ * @retval Next state: PM_PAGE_STATE_IDLE.
  */
-PageState_t page_manager_state_unload_execute(PageManager_t* self, PageBase_t* base)
+pm_page_state_t page_manager_state_unload_execute(pm_manager_t* self, pm_page_base_t* base)
 {
     (void)self;
     PM_LOG_INFO("Page(%s) state unload", base->name);
     if (base->root == NULL) {
         PM_LOG_WARN("Page is loaded!");
-        return PAGE_STATE_IDLE;
+        return PM_PAGE_STATE_IDLE;
     }
 
     PM_CALL_VFUNC(base, on_view_unload);
@@ -231,5 +231,5 @@ PageState_t page_manager_state_unload_execute(PageManager_t* self, PageBase_t* b
     base->priv.is_cached = false;
     PM_CALL_VFUNC(base, on_view_did_unload);
 
-    return PAGE_STATE_IDLE;
+    return PM_PAGE_STATE_IDLE;
 }

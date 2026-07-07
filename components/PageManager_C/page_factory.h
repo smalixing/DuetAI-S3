@@ -14,20 +14,20 @@
 extern "C" {
 #endif
 
-#include "PageBase.h"
+#include "page_base.h"
 
-typedef struct PageFactory PageFactory_t;
+typedef struct pm_factory pm_factory_t;
 
 /* Create a page given its class name.  Return NULL if not supported. */
-typedef PageBase_t* (*PageFactoryCreate_f)(PageFactory_t* self, const char* class_name);
+typedef pm_page_base_t* (*pm_factory_create_f)(pm_factory_t* self, const char* class_name);
 
-struct PageFactory {
-    PageFactoryCreate_f create;
+struct pm_factory {
+    pm_factory_create_f create;
     void*               user_ctx; /* optional implementation-specific context */
 };
 
 /* Helper that simply calls factory->create(factory, class_name). */
-PageBase_t* page_factory_create_page(PageFactory_t* factory, const char* class_name);
+pm_page_base_t* page_factory_create_page(pm_factory_t* factory, const char* class_name);
 
 #ifdef __cplusplus
 }

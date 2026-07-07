@@ -3,8 +3,8 @@
  * PageManager_C usage demo - public entry point.
  *
  * This demo shows how to use the C port of PageManager end to end:
- *   - implementing concrete pages with a PageVTable_t,
- *   - wiring them up through a PageFactory_t,
+ *   - implementing concrete pages with a pm_page_vtable_t,
+ *   - wiring them up through a pm_factory_t,
  *   - installing pages and driving navigation (Push / Pop / Replace / BackHome),
  *   - passing parameters between pages via the stash mechanism.
  *

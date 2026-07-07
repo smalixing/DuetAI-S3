@@ -2,7 +2,7 @@
  * MIT License
  * C-language port of PageFactory implementation.
  */
-#include "PageFactory.h"
+#include "page_factory.h"
 
 /**
  * @brief  Create a page instance for a given class name via the factory.
@@ -13,7 +13,7 @@
  * @param  class_name  Class name identifying which page to construct.
  * @retval Pointer to a newly created page, or NULL if unsupported / bad args.
  */
-PageBase_t* page_factory_create_page(PageFactory_t* factory, const char* class_name)
+pm_page_base_t* page_factory_create_page(pm_factory_t* factory, const char* class_name)
 {
     if (factory == NULL || factory->create == NULL) {
         return NULL;

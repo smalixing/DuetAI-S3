@@ -9,8 +9,8 @@
  * - Animation state management
  */
 
-#include "PageManager.h"
-#include "PM_Log.h"
+#include "page_manager.h"
+#include "pm_log.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,7 +21,7 @@
  * @param stash Parameters passed to the new page
  * @retval Return true if successful
  */
-bool page_manager_replace(PageManager_t* self, const char* name, const PageStash_t* stash)
+bool page_manager_replace(pm_manager_t* self, const char* name, const pm_page_stash_t* stash)
 {
     /* Check whether the animation of switching pages is being executed */
     if (!page_manager_switch_anim_state_check(self)) {
@@ -35,14 +35,14 @@ bool page_manager_replace(PageManager_t* self, const char* name, const PageStash
     }
 
     /* Check if the page is registered in the page pool */
-    PageBase_t* base = page_manager_find_page_in_pool(self, name);
+    pm_page_base_t* base = page_manager_find_page_in_pool(self, name);
     if (base == NULL) {
         PM_LOG_ERROR("Page(%s) was not install", name);
         return false;
     }
 
     /* Get the top page of the stack */
-    PageBase_t* top = page_manager_get_stack_top(self);
+    pm_page_base_t* top = page_manager_get_stack_top(self);
     if (top == NULL) {
         PM_LOG_ERROR("Stack top is NULL");
         return false;
@@ -75,7 +75,7 @@ bool page_manager_replace(PageManager_t* self, const char* name, const PageStash
  * @param stash Parameters passed to the new page
  * @retval Return true if successful
  */
-bool page_manager_push(PageManager_t* self, const char* name, const PageStash_t* stash)
+bool page_manager_push(pm_manager_t* self, const char* name, const pm_page_stash_t* stash)
 {
     /* Check whether the animation of switching pages is being executed */
     if (!page_manager_switch_anim_state_check(self)) {
@@ -89,7 +89,7 @@ bool page_manager_push(PageManager_t* self, const char* name, const PageStash_t*
     }
 
     /* Check if the page is registered in the page pool */
-    PageBase_t* base = page_manager_find_page_in_pool(self, name);
+    pm_page_base_t* base = page_manager_find_page_in_pool(self, name);
     if (base == NULL) {
         PM_LOG_ERROR("Page(%s) was not install", name);
         return false;
@@ -114,7 +114,7 @@ bool page_manager_push(PageManager_t* self, const char* name, const PageStash_t*
  * @param self Pointer to page manager
  * @retval Return true if successful
  */
-bool page_manager_pop(PageManager_t* self)
+bool page_manager_pop(pm_manager_t* self)
 {
     /* Check whether the animation of switching pages is being executed */
     if (!page_manager_switch_anim_state_check(self)) {
@@ -122,7 +122,7 @@ bool page_manager_pop(PageManager_t* self)
     }
 
     /* Get the top page of the stack */
-    PageBase_t* top = page_manager_get_stack_top(self);
+    pm_page_base_t* top = page_manager_get_stack_top(self);
     if (top == NULL) {
         PM_LOG_WARN("Page stack is empty, cat't pop");
         return false;
@@ -151,7 +151,7 @@ bool page_manager_pop(PageManager_t* self)
  * @param self Pointer to page manager
  * @retval Return true if successful
  */
-bool page_manager_pop_unshow(PageManager_t* self)
+bool page_manager_pop_unshow(pm_manager_t* self)
 {
     /* Check whether the animation of switching pages is being executed */
     if (!page_manager_switch_anim_state_check(self)) {
@@ -159,7 +159,7 @@ bool page_manager_pop_unshow(PageManager_t* self)
     }
 
     /* Get the top page of the stack */
-    PageBase_t* top = page_manager_get_stack_top(self);
+    pm_page_base_t* top = page_manager_get_stack_top(self);
     if (top == NULL) {
         PM_LOG_WARN("Page stack is empty, cat't pop");
         return false;
@@ -186,7 +186,7 @@ bool page_manager_pop_unshow(PageManager_t* self)
  * @param stash Parameters passed to the new page
  * @retval Return true if successful
  */
-bool page_manager_switch_to(PageManager_t* self, PageBase_t* new_node, bool is_enter_act, const PageStash_t* stash)
+bool page_manager_switch_to(pm_manager_t* self, pm_page_base_t* new_node, bool is_enter_act, const pm_page_stash_t* stash)
 {
     if (self == NULL || new_node == NULL) {
         PM_LOG_ERROR("self or new_node is nullptr");
@@ -235,10 +235,10 @@ bool page_manager_switch_to(PageManager_t* self, PageBase_t* new_node, bool is_e
     if (self->page_current->priv.is_cached) {
         /* Direct display, no need to load */
         PM_LOG_INFO("Page(%s) has cached, appear directly", self->page_current->name);
-        self->page_current->priv.state = PAGE_STATE_WILL_APPEAR;
+        self->page_current->priv.state = PM_PAGE_STATE_WILL_APPEAR;
     } else {
         /* Load page */
-        self->page_current->priv.state = PAGE_STATE_LOAD;
+        self->page_current->priv.state = PM_PAGE_STATE_LOAD;
     }
 
     if (self->page_prev != NULL) {
@@ -280,7 +280,7 @@ bool page_manager_switch_to(PageManager_t* self, PageBase_t* new_node, bool is_e
  * @param base Pointer to the page being executed
  * @retval Return true if successful
  */
-bool page_manager_fource_unload(PageManager_t* self, PageBase_t* base)
+bool page_manager_fource_unload(pm_manager_t* self, pm_page_base_t* base)
 {
     if (self == NULL || base == NULL) {
         PM_LOG_ERROR("Page is nullptr, Unload failed");
@@ -289,7 +289,7 @@ bool page_manager_fource_unload(PageManager_t* self, PageBase_t* base)
 
     PM_LOG_INFO("Page(%s) Fource unloading...", base->name);
 
-    if (base->priv.state == PAGE_STATE_ACTIVITY) {
+    if (base->priv.state == PM_PAGE_STATE_ACTIVITY) {
         PM_LOG_INFO("Page state is ACTIVITY, Disappearing...");
         PM_CALL_VFUNC(base, on_view_will_disappear);
         PM_CALL_VFUNC(base, on_view_did_disappear);
@@ -305,7 +305,7 @@ bool page_manager_fource_unload(PageManager_t* self, PageBase_t* base)
  * @param self Pointer to page manager
  * @retval Return true if successful
  */
-bool page_manager_back_home(PageManager_t* self)
+bool page_manager_back_home(pm_manager_t* self)
 {
     /* Check whether the animation of switching pages is being executed */
     if (!page_manager_switch_anim_state_check(self)) {
@@ -316,12 +316,12 @@ bool page_manager_back_home(PageManager_t* self)
 
     self->page_prev = NULL;
 
-    PageBase_t* home = page_manager_get_stack_top(self);
+    pm_page_base_t* home = page_manager_get_stack_top(self);
 
     return page_manager_switch_to(self, home, false, NULL);
 }
 
-bool page_manager_back_home_unshow(PageManager_t* self)
+bool page_manager_back_home_unshow(pm_manager_t* self)
 {
     /* Check whether the animation of switching pages is being executed */
     if (!page_manager_switch_anim_state_check(self)) {
@@ -340,7 +340,7 @@ bool page_manager_back_home_unshow(PageManager_t* self)
  * @param self Pointer to page manager
  * @retval Return true if it is executing
  */
-bool page_manager_switch_anim_state_check(PageManager_t* self)
+bool page_manager_switch_anim_state_check(pm_manager_t* self)
 {
     if (self == NULL) return false;
     
@@ -362,7 +362,7 @@ bool page_manager_switch_anim_state_check(PageManager_t* self)
  * @param self Pointer to page manager
  * @retval Return true if all pages are executed
  */
-bool page_manager_switch_req_check(PageManager_t* self)
+bool page_manager_switch_req_check(pm_manager_t* self)
 {
     if (self == NULL) return false;
     
@@ -391,13 +391,13 @@ bool page_manager_switch_req_check(PageManager_t* self)
  *        that page's state machine, clears its busy flag, then checks whether
  *        both the entering and exiting pages are done. When a pop has fully
  *        completed it refreshes the current animation type for the next move.
- * @param a Pointer to animation (its user-data is the PageBase_t*)
+ * @param a Pointer to animation (its user-data is the pm_page_base_t*)
  * @retval None
  */
 static void on_switch_anim_finish(lv_anim_t* a)
 {
-    PageBase_t* base = (PageBase_t*)lv_anim_get_user_data(a);
-    PageManager_t* manager = base->manager;
+    pm_page_base_t* base = (pm_page_base_t*)lv_anim_get_user_data(a);
+    pm_manager_t* manager = base->manager;
     
     if (manager == NULL) return;
 
@@ -418,11 +418,11 @@ static void on_switch_anim_finish(lv_anim_t* a)
  * @param base Pointer to the animated page
  * @retval None
  */
-void page_manager_switch_anim_create(PageManager_t* self, PageBase_t* base)
+void page_manager_switch_anim_create(pm_manager_t* self, pm_page_base_t* base)
 {
     if (self == NULL || base == NULL) return;
 
-    LoadAnimAttr_t anim_attr;
+    pm_load_anim_attr_t anim_attr;
     if (!page_manager_get_current_load_anim_attr(self, &anim_attr)) {
         return;
     }

@@ -18,16 +18,16 @@
  * which runs the page life-cycle callbacks and the slide animation.
  *
  * Key patterns shown:
- *   1. A concrete page = "struct { PageBase_t base; ...own fields...; }" so the
- *      page pointer can be cast to/from PageBase_t*.
- *   2. A static const PageVTable_t per page type wires the life-cycle hooks.
+ *   1. A concrete page = "struct { pm_page_base_t base; ...own fields...; }" so the
+ *      page pointer can be cast to/from pm_page_base_t*.
+ *   2. A static const pm_page_vtable_t per page type wires the life-cycle hooks.
  *   3. The factory allocates a concrete page by class name.
  *   4. Stash passes a small POD payload from caller to the new page.
  */
-#include "PageManager_C_Demo.h"
-#include "../PageManager.h"
-#include "../PageBase.h"
-#include "../PageFactory.h"
+#include "page_manager_c_demo.h"
+#include "../page_manager.h"
+#include "../page_base.h"
+#include "../page_factory.h"
 
 /* ================================================================== */
 /* Shared payload passed between pages via the stash                   */
@@ -36,19 +36,19 @@
 /* Plain-old-data struct copied into the target page's stash on navigation. */
 typedef struct {
     int counter; /* how many times Detail has been opened */
-} DetailParam_t;
+} detail_param_t;
 
 /**
  * @brief  Shared destructor for demo pages.
  * @note   The manager calls this from page_manager_uninstall() AFTER the page
  *         has been unloaded; it does NOT free the page object itself, so the
- *         factory-allocated memory must be released here. Because PageBase_t
+ *         factory-allocated memory must be released here. Because pm_page_base_t
  *         is the first member of every concrete page struct, freeing @p base
- *         frees the whole HomePage_t / DetailPage_t allocation.
+ *         frees the whole home_page_t / detail_page_t allocation.
  * @param  base  Pointer to the page base to free.
  * @retval None
  */
-static void demo_page_on_destroy(PageBase_t* base)
+static void demo_page_on_destroy(pm_page_base_t* base)
 {
     lv_mem_free(base);
 }
@@ -57,24 +57,24 @@ static void demo_page_on_destroy(PageBase_t* base)
 /* HomePage                                                            */
 /* ================================================================== */
 
-/* Concrete page: embeds PageBase_t as its FIRST member (mandatory) so a
- * HomePage_t* and a PageBase_t* are interchangeable via cast. */
+/* Concrete page: embeds pm_page_base_t as its FIRST member (mandatory) so a
+ * home_page_t* and a pm_page_base_t* are interchangeable via cast. */
 typedef struct {
-    PageBase_t base;           /* must be first */
+    pm_page_base_t base;           /* must be first */
     lv_obj_t*  btn_open;       /* "Open Detail" */
     lv_obj_t*  btn_open_again; /* "Open Detail (again)" */
     int        open_count;     /* bumped each time we open Detail */
-} HomePage_t;
+} home_page_t;
 
 /* The demo's single manager instance and a guard against double-start. */
-static PageManager_t s_manager;
+static pm_manager_t s_manager;
 static bool          s_started = false;
 
 /**
  * @brief  HomePage button event handler.
  * @note   On a short click of either button, increments the open counter and
  *         pushes DetailPage, handing it the counter through the stash. Using
- *         PAGE_STASH_MAKE() builds a {pointer,size} descriptor; the manager
+ *         PM_PAGE_STASH_MAKE() builds a {pointer,size} descriptor; the manager
  *         copies the bytes into the target page so the caller's local can go
  *         out of scope safely.
  * @param  e  LVGL event.
@@ -87,11 +87,11 @@ static void home_event_cb(lv_event_t* e)
         return;
     }
 
-    HomePage_t* self = (HomePage_t*)lv_event_get_user_data(e);
+    home_page_t* self = (home_page_t*)lv_event_get_user_data(e);
 
     self->open_count++;
-    DetailParam_t param = { .counter = self->open_count };
-    PageStash_t stash = PAGE_STASH_MAKE(param);
+    detail_param_t param = { .counter = self->open_count };
+    pm_page_stash_t stash = PM_PAGE_STASH_MAKE(param);
 
     /* Push the detail page on top of Home, passing the counter. */
     page_manager_push(self->base.manager, "DetailPage", &stash);
@@ -102,12 +102,12 @@ static void home_event_cb(lv_event_t* e)
  * @note   Creates two buttons centered on the page root and attaches the
  *         click handler. The root object is provided by the manager in
  *         base->root before this hook runs.
- * @param  base  Pointer to the page base (cast to HomePage_t* for own fields).
+ * @param  base  Pointer to the page base (cast to home_page_t* for own fields).
  * @retval None
  */
-static void home_on_view_load(PageBase_t* base)
+static void home_on_view_load(pm_page_base_t* base)
 {
-    HomePage_t* self = (HomePage_t*)base;
+    home_page_t* self = (home_page_t*)base;
 
     lv_obj_set_style_bg_color(base->root, lv_color_hex(0x202840), LV_PART_MAIN);
 
@@ -139,7 +139,7 @@ static void home_on_view_load(PageBase_t* base)
  * @param  base  Pointer to the page base.
  * @retval None
  */
-static void home_on_custom_attr_config(PageBase_t* base)
+static void home_on_custom_attr_config(pm_page_base_t* base)
 {
     /* Let the manager auto-manage the cache (default). Nothing special here;
      * shown to illustrate where per-page config belongs. */
@@ -147,7 +147,7 @@ static void home_on_custom_attr_config(PageBase_t* base)
 }
 
 /* HomePage life-cycle table. Unset slots are NULL and treated as no-ops. */
-static const PageVTable_t s_home_vtable = {
+static const pm_page_vtable_t s_home_vtable = {
     .on_custom_attr_config = home_on_custom_attr_config,
     .on_view_load          = home_on_view_load,
     .on_destroy            = demo_page_on_destroy,
@@ -158,13 +158,13 @@ static const PageVTable_t s_home_vtable = {
 /* ================================================================== */
 
 typedef struct {
-    PageBase_t base;        /* must be first */
+    pm_page_base_t base;        /* must be first */
     lv_obj_t*  lbl_counter; /* shows the stashed counter */
     lv_obj_t*  btn_back;    /* pop() */
     lv_obj_t*  btn_reopen;  /* replace() */
     lv_obj_t*  btn_home;    /* back_home() */
     int        counter;     /* value received via stash */
-} DetailPage_t;
+} detail_page_t;
 
 /**
  * @brief  DetailPage button event handler.
@@ -183,14 +183,14 @@ static void detail_event_cb(lv_event_t* e)
         return;
     }
 
-    DetailPage_t* self = (DetailPage_t*)lv_event_get_user_data(e);
+    detail_page_t* self = (detail_page_t*)lv_event_get_user_data(e);
     lv_obj_t*     btn  = lv_event_get_current_target(e);
 
     if (btn == self->btn_back) {
         page_manager_pop(self->base.manager);
     } else if (btn == self->btn_reopen) {
-        DetailParam_t param = { .counter = self->counter + 1 };
-        PageStash_t   stash = PAGE_STASH_MAKE(param);
+        detail_param_t param = { .counter = self->counter + 1 };
+        pm_page_stash_t   stash = PM_PAGE_STASH_MAKE(param);
         page_manager_replace(self->base.manager, "DetailPage", &stash);
     } else if (btn == self->btn_home) {
         page_manager_back_home(self->base.manager);
@@ -202,9 +202,9 @@ static void detail_event_cb(lv_event_t* e)
  * @param  base  Pointer to the page base.
  * @retval None
  */
-static void detail_on_view_load(PageBase_t* base)
+static void detail_on_view_load(pm_page_base_t* base)
 {
-    DetailPage_t* self = (DetailPage_t*)base;
+    detail_page_t* self = (detail_page_t*)base;
 
     lv_obj_set_style_bg_color(base->root, lv_color_hex(0x283848), LV_PART_MAIN);
 
@@ -244,18 +244,18 @@ static void detail_on_view_load(PageBase_t* base)
 
 /**
  * @brief  DetailPage: read the stashed parameter just before appearing.
- * @note   PAGE_STASH_POP() copies the payload out of the stash (size-checked)
+ * @note   PM_PAGE_STASH_POP() copies the payload out of the stash (size-checked)
  *         and consumes it. We read here rather than in load so a cached page
  *         re-shown via replace() also refreshes its displayed value.
  * @param  base  Pointer to the page base.
  * @retval None
  */
-static void detail_on_view_will_appear(PageBase_t* base)
+static void detail_on_view_will_appear(pm_page_base_t* base)
 {
-    DetailPage_t* self = (DetailPage_t*)base;
+    detail_page_t* self = (detail_page_t*)base;
 
-    DetailParam_t param = { .counter = 0 };
-    if (PAGE_STASH_POP(base, param)) {
+    detail_param_t param = { .counter = 0 };
+    if (PM_PAGE_STASH_POP(base, param)) {
         self->counter = param.counter;
     }
 
@@ -263,7 +263,7 @@ static void detail_on_view_will_appear(PageBase_t* base)
 }
 
 /* DetailPage life-cycle table. */
-static const PageVTable_t s_detail_vtable = {
+static const pm_page_vtable_t s_detail_vtable = {
     .on_view_load         = detail_on_view_load,
     .on_view_will_appear  = detail_on_view_will_appear,
     .on_destroy           = demo_page_on_destroy,
@@ -283,19 +283,19 @@ static const PageVTable_t s_detail_vtable = {
  * @param  class_name  Class name requested by page_manager_install().
  * @retval Pointer to the new page base, or NULL on unknown name / OOM.
  */
-static PageBase_t* demo_factory_create(PageFactory_t* factory, const char* class_name)
+static pm_page_base_t* demo_factory_create(pm_factory_t* factory, const char* class_name)
 {
     (void)factory;
 
     if (strcmp(class_name, "HomePage") == 0) {
-        HomePage_t* p = (HomePage_t*)lv_mem_alloc(sizeof(HomePage_t));
+        home_page_t* p = (home_page_t*)lv_mem_alloc(sizeof(home_page_t));
         if (!p) return NULL;
         page_base_init(&p->base, &s_home_vtable);
         return &p->base;
     }
 
     if (strcmp(class_name, "DetailPage") == 0) {
-        DetailPage_t* p = (DetailPage_t*)lv_mem_alloc(sizeof(DetailPage_t));
+        detail_page_t* p = (detail_page_t*)lv_mem_alloc(sizeof(detail_page_t));
         if (!p) return NULL;
         page_base_init(&p->base, &s_detail_vtable);
         return &p->base;
@@ -305,7 +305,7 @@ static PageBase_t* demo_factory_create(PageFactory_t* factory, const char* class
 }
 
 /* The factory is a struct of a create callback (+ optional user_ctx). */
-static PageFactory_t s_factory = {
+static pm_factory_t s_factory = {
     .create   = demo_factory_create,
     .user_ctx = NULL,
 };
@@ -325,7 +325,7 @@ void page_manager_c_demo_start(void)
 
     /* 2. Pick a default slide animation for all page switches. */
     page_manager_set_global_load_anim_type(
-        &s_manager, LOAD_ANIM_MOVE_LEFT, 300, lv_anim_path_ease_out);
+        &s_manager, PM_LOAD_ANIM_MOVE_LEFT, 300, lv_anim_path_ease_out);
 
     /* 3. Install the pages (class name == app name here for simplicity). */
     page_manager_install(&s_manager, "HomePage",   "HomePage");

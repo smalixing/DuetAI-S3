@@ -8,8 +8,8 @@
  * - Inertia and gesture prediction
  */
 
-#include "PageManager.h"
-#include "PM_Log.h"
+#include "page_manager.h"
+#include "pm_log.h"
 #include <stdlib.h>
 
 #define CONSTRAIN(amt, low, high) ((amt) < (low) ? (low) : ((amt) > (high) ? (high) : (amt)))
@@ -36,20 +36,20 @@ static void on_root_drag_event(lv_event_t* event)
     }
 
     lv_obj_t* root = lv_event_get_current_target(event);
-    PageBase_t* base = (PageBase_t*)lv_event_get_user_data(event);
+    pm_page_base_t* base = (pm_page_base_t*)lv_event_get_user_data(event);
     
     if (base == NULL) {
         PM_LOG_ERROR("Page base is NULL");
         return;
     }
 
-    PageManager_t* manager = base->manager;
+    pm_manager_t* manager = base->manager;
     if (manager == NULL) {
         PM_LOG_ERROR("Page manager is NULL");
         return;
     }
 
-    LoadAnimAttr_t anim_attr;
+    pm_load_anim_attr_t anim_attr;
     if (!page_manager_get_current_load_anim_attr(manager, &anim_attr)) {
         PM_LOG_ERROR("Can't get current anim attr");
         return;
@@ -69,7 +69,7 @@ static void on_root_drag_event(lv_event_t* event)
         manager->anim_state.is_busy = false;
 
         /* Temporary showing the bottom page */
-        PageBase_t* bottom_page = page_manager_get_stack_top_after(manager);
+        pm_page_base_t* bottom_page = page_manager_get_stack_top_after(manager);
         if (bottom_page) {
             lv_obj_clear_flag(bottom_page->root, LV_OBJ_FLAG_HIDDEN);
         }
@@ -84,9 +84,9 @@ static void on_root_drag_event(lv_event_t* event)
         lv_point_t offset;
         lv_indev_get_vect(lv_indev_get_act(), &offset);
 
-        if (anim_attr.drag_dir == ROOT_DRAG_DIR_HOR) {
+        if (anim_attr.drag_dir == PM_ROOT_DRAG_DIR_HOR) {
             cur += offset.x;
-        } else if (anim_attr.drag_dir == ROOT_DRAG_DIR_VER) {
+        } else if (anim_attr.drag_dir == PM_ROOT_DRAG_DIR_VER) {
             cur += offset.y;
         }
 
@@ -105,10 +105,10 @@ static void on_root_drag_event(lv_event_t* event)
         lv_coord_t start = anim_attr.getter(root);
         lv_coord_t end = start;
 
-        if (anim_attr.drag_dir == ROOT_DRAG_DIR_HOR) {
+        if (anim_attr.drag_dir == PM_ROOT_DRAG_DIR_HOR) {
             end += x_predict;
             PM_LOG_INFO("Root drag x_predict = %d", end);
-        } else if (anim_attr.drag_dir == ROOT_DRAG_DIR_VER) {
+        } else if (anim_attr.drag_dir == PM_ROOT_DRAG_DIR_VER) {
             end += y_predict;
             PM_LOG_INFO("Root drag y_predict = %d", end);
         }
@@ -138,12 +138,12 @@ static void on_root_drag_event(lv_event_t* event)
  */
 static void on_root_drag_anim_finish(lv_anim_t* a)
 {
-    PageManager_t* manager = (PageManager_t*)lv_anim_get_user_data(a);
+    pm_manager_t* manager = (pm_manager_t*)lv_anim_get_user_data(a);
     PM_LOG_INFO("Root drag anim finish");
     manager->anim_state.is_busy = false;
 
     /* Hide the bottom page */
-    PageBase_t* bottom_page = page_manager_get_stack_top_after(manager);
+    pm_page_base_t* bottom_page = page_manager_get_stack_top_after(manager);
     if (bottom_page) {
         lv_obj_add_flag(bottom_page->root, LV_OBJ_FLAG_HIDDEN);
     }
@@ -155,11 +155,11 @@ static void on_root_drag_anim_finish(lv_anim_t* a)
  * @param root Pointer to the root object
  * @retval None
  */
-void page_manager_root_enable_drag(PageManager_t* self, lv_obj_t* root)
+void page_manager_root_enable_drag(pm_manager_t* self, lv_obj_t* root)
 {
     if (self == NULL || root == NULL) return;
     
-    PageBase_t* base = (PageBase_t*)lv_obj_get_user_data(root);
+    pm_page_base_t* base = (pm_page_base_t*)lv_obj_get_user_data(root);
     if (base == NULL) return;
 
     lv_obj_add_event_cb(
@@ -178,7 +178,7 @@ void page_manager_root_enable_drag(PageManager_t* self, lv_obj_t* root)
  */
 static void on_root_async_leave(void* data)
 {
-    PageBase_t* base = (PageBase_t*)data;
+    pm_page_base_t* base = (pm_page_base_t*)data;
     PM_LOG_INFO("Page(%s) send event: LV_EVENT_LEAVE, need to handle...", base->name);
     lv_event_send(base->root, LV_EVENT_LEAVE, base);
 }

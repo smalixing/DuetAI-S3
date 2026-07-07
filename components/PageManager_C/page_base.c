@@ -2,19 +2,19 @@
  * MIT License
  * C-language port of PageBase implementation.
  */
-#include "PageBase.h"
-#include "PM_Log.h"
+#include "page_base.h"
+#include "pm_log.h"
 
 /**
  * @brief  Initialise a page base structure and bind its vtable.
  * @note   Must be called by a concrete page's constructor before the page is
  *         handed to page_manager_register()/Install(). Zeroes all public and
  *         private fields, then stores the vtable of life-cycle callbacks.
- * @param  self    Pointer to the (embedded) PageBase_t to initialise.
+ * @param  self    Pointer to the (embedded) pm_page_base_t to initialise.
  * @param  vtable  Pointer to the page's callback table (may contain NULLs).
  * @retval None
  */
-void page_base_init(PageBase_t* self, const PageVTable_t* vtable)
+void page_base_init(pm_page_base_t* self, const pm_page_vtable_t* vtable)
 {
     if (self == NULL) {
         return;
@@ -32,7 +32,7 @@ void page_base_init(PageBase_t* self, const PageVTable_t* vtable)
  * @param  en    true to keep the page cached under manual control.
  * @retval None
  */
-void page_base_set_custom_cache_enable(PageBase_t* self, bool en)
+void page_base_set_custom_cache_enable(pm_page_base_t* self, bool en)
 {
     if (self == NULL) return;
     PM_LOG_INFO("Page(%s) set_custom_cache_enable = %d", self->name, en);
@@ -49,7 +49,7 @@ void page_base_set_custom_cache_enable(PageBase_t* self, bool en)
  * @param  en    true to let the manager auto-manage the cache.
  * @retval None
  */
-void page_base_set_custom_auto_cache_enable(PageBase_t* self, bool en)
+void page_base_set_custom_auto_cache_enable(pm_page_base_t* self, bool en)
 {
     if (self == NULL) return;
     PM_LOG_INFO("Page(%s) set_custom_auto_cache_enable = %d", self->name, en);
@@ -60,15 +60,15 @@ void page_base_set_custom_auto_cache_enable(PageBase_t* self, bool en)
  * @brief  Override the page's load/switch animation.
  * @note   Sets a page-specific animation type, duration and easing path that
  *         take precedence over the manager's global settings (unless the type
- *         is LOAD_ANIM_GLOBAL, which means "inherit global").
+ *         is PM_LOAD_ANIM_GLOBAL, which means "inherit global").
  * @param  self       Pointer to the page.
- * @param  anim_type  Animation type (LoadAnim_t value).
+ * @param  anim_type  Animation type (pm_load_anim_t value).
  * @param  time       Animation duration in milliseconds.
  * @param  path       LVGL easing/path callback for the animation curve.
  * @retval None
  */
 void page_base_set_custom_load_anim_type(
-    PageBase_t*       self,
+    pm_page_base_t*   self,
     uint8_t           anim_type,
     uint16_t          time,
     lv_anim_path_cb_t path)
@@ -91,7 +91,7 @@ void page_base_set_custom_load_anim_type(
  * @retval true  Data was copied out and the stash was freed.
  * @retval false No stash, size mismatch, or bad args.
  */
-bool page_base_stash_pop(PageBase_t* self, void* ptr, uint32_t size)
+bool page_base_stash_pop(pm_page_base_t* self, void* ptr, uint32_t size)
 {
     if (self == NULL || ptr == NULL) {
         return false;
