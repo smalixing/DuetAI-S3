@@ -1,0 +1,63 @@
+---
+description: Git commit message format for esp-adf projects
+alwaysApply: true
+---
+
+# Git Commit Message Format
+
+## Structure
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+## Type (lowercase only)
+
+`feat` `fix` `refactor` `docs` `test` `ci` `change` `remove` `revert` `release` `dev` `customer`
+
+## Scope
+
+Lowercase component or directory name: `audio_stream`, `esp_service`, `examples`, `docs`, etc.
+Do NOT prefix with `component/`.
+
+## Subject rules
+
+- Start with imperative verb: `Add` / `Fix` / `Remove` / `Change` / `Improve` / `Update`
+- Capitalize first letter, no period at end
+- Max 50 characters
+- Present tense: "Fix bug" not "Fixed bug"
+
+## Body (optional)
+
+- Use when subject alone is insufficient
+- No indentation; blank line separates from subject
+- Last sentence has no trailing period
+- No internal ticket references (e.g. no `AUD-1234`)
+
+## Footer (optional)
+
+Close public GitHub issues with full URL:
+```
+Closes https://github.com/espressif/esp-adf/issues/XXXX
+```
+
+## Examples
+
+```
+feat(audio_board): Add esp32_s3_korvo2_v3 board configurations
+```
+
+```
+fix(audio_pipeline): Fix startup timeout issue
+
+The read/write sync semaphore was released too early, allowing a
+higher-priority task to write data before the flag was updated
+```
+
+```
+refactor(esp_service): Restructure source layout and add Kconfig controls
+```

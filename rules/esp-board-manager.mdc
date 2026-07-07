@@ -1,0 +1,118 @@
+---
+description: How to add and use Espressif esp_board_manager in an ESP-IDF project
+globs: **/idf_component.yml,**/CMakeLists.txt,**/main/*.c,**/main/*.cpp
+alwaysApply: false
+---
+
+# esp_board_manager Integration
+
+## Dependency Declaration
+
+In `main/idf_component.yml`, depend on esp_board_manager with an open
+version range (`"*"`). No other manual pinning is needed — the component
+manager pulls the latest compatible release.
+
+```yaml
+dependencies:
+  espressif/esp_board_manager: "*"
+```
+
+## CMakeLists
+
+Do **NOT** add `esp_board_manager` to `REQUIRES` in `main/CMakeLists.txt`.
+The dep declared in `idf_component.yml` is enough; the component manager
+wires it into the build and makes the headers visible.
+
+```cmake
+idf_component_register(
+    SRCS         "app_main.c"
+    INCLUDE_DIRS "."
+    REQUIRES     fatfs       # only app-domain components here
+)
+```
+
+## gen_bmgr_codes
+
+`components/gen_bmgr_codes/` is **auto-generated** — never hand-write it
+and never copy it from another project.  It is produced when the board
+is selected via the board_manager tooling.
+
+The generator writes the board pin map, peripheral config, device list,
+and `board_manager.defaults` (which feeds sdkconfig) into
+`components/gen_bmgr_codes/`. That component's `CMakeLists.txt` does
+`REQUIRES esp_board_manager` + `WHOLE_ARCHIVE TRUE`, so its init code
+is pulled into the final binary without the app needing to reference it.
+
+## Build Workflow
+
+The `bmgr` assistant (registered via `IDF_EXTRA_ACTIONS_PATH`) downloads
+`esp_board_manager` on first use and selects the target chip from the
+chosen board's YAML — **do NOT run `idf.py set-target` manually**.
+
+Standard flow:
+
+```bash
+idf.py bmgr -b <board_name>     # e.g. esp32_s3_korvo2_v3 — picks board + target
+idf.py build                    # build directly, no set-target needed
+```
+
+### Troubleshooting board_manager build errors
+
+When the build complains about `esp_board_manager` / `gen_bmgr_codes`,
+follow this order — **never "fix" it by editing `sdkconfig` or adding
+explicit deps in `CMakeLists.txt`**:
+
+1. Confirm `esp_board_manager` is actually pulled in
+   (`managed_components/espressif__esp_board_manager/` exists after a
+   component-manager run).
+2. Run `idf.py bmgr -l` to list available boards.
+   - If this command itself errors out, `IDF_EXTRA_ACTIONS_PATH` is not
+     set / points at the wrong location. Fix the env var first, then
+     re-run `idf.py bmgr -b <board_name>` to regenerate
+     `components/gen_bmgr_codes/`.
+3. If the build still fails, wipe board_manager state with
+   `idf.py bmgr -x` (clears every artifact bmgr produced), then redo
+   `idf.py bmgr -b <board_name>` and `idf.py build`.
+
+### Hard rule on dependencies
+
+Dependencies on `esp_board_manager` and any board-driven components are
+declared **only** via `main/idf_component.yml`. Do not paper over a
+board_manager error by hand-adding `REQUIRES esp_board_manager` (or its
+sub-components) to `CMakeLists.txt`, and do not hand-set
+`CONFIG_ESP_BOARD_*` / legacy audio_board selectors in `sdkconfig`. The
+YAML dependency is the single source of truth; everything else is
+generated.
+
+## sdkconfig
+
+Do not set legacy audio_board selectors like
+`CONFIG_ESP32_S3_KORVO2_V3_BOARD=y` — board selection is owned by the
+generated `components/gen_bmgr_codes/board_manager.defaults` (e.g.
+`CONFIG_ESP_BOARD_ESP32_S3_KORVO2_V3=y`).
+
+## Single-Device Init (e.g. SD card only)
+
+Use `esp_board_manager_init_device_by_name` to bring up just one device
+without running the full `esp_board_manager_init`:
+
+```c
+#include "dev_fs_fat.h"
+#include "esp_board_device.h"
+#include "esp_board_manager.h"
+#include "esp_board_manager_defs.h"
+
+esp_err_t ret = esp_board_manager_init_device_by_name(ESP_BOARD_DEVICE_NAME_FS_SDCARD);
+if (ret != ESP_OK) { /* handle */ }
+
+dev_fs_fat_handle_t *sd = NULL;
+esp_board_device_get_handle(ESP_BOARD_DEVICE_NAME_FS_SDCARD, (void **)&sd);
+// Use sd->mount_point instead of hard-coding "/sdcard".
+
+// Teardown:
+esp_board_manager_deinit_device_by_name(ESP_BOARD_DEVICE_NAME_FS_SDCARD);
+```
+
+Never hand-write `sdmmc_host_t` / `sdmmc_slot_config_t` / `esp_vfs_fat_sdmmc_mount`
+in app code when board_manager is in use — the board YAML already owns
+pins, slot width, and mount point.

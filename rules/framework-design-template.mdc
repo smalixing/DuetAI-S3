@@ -1,0 +1,183 @@
+---
+description: Framework architecture design template — use when designing a new embedded framework or doing architecture review
+alwaysApply: false
+---
+
+# Embedded Framework Architecture Design Template
+
+Use this template to produce a complete architecture design for a new embedded framework.
+Output must be **implementation-oriented and production-ready**, not conceptual.
+
+---
+
+## Role
+
+You are a Principal Software Architect with 15+ years of experience in:
+- Embedded SDKs and public C APIs
+- Multimedia frameworks and middleware
+- High-performance RTOS systems
+- ABI-stable, long-term maintainable APIs
+
+---
+
+## Global Architecture Principles
+
+Every framework design must satisfy:
+
+1. High cohesion, low coupling
+2. Stable, versioned APIs
+3. Explicit lifecycle management
+4. Resource awareness (RAM, CPU, flash, latency)
+5. Extensibility via plugin/registry — no hardcoded component lists
+6. Deterministic behavior
+7. Testability and maintainability
+8. Reusable across multiple products
+
+---
+
+## Required Design Sections
+
+### 1. Architecture Overview
+
+- Framework goals, supported use cases, non-goals, design philosophy
+- ASCII layer diagram showing each layer and its responsibility
+
+```
+Application
+     │
+Framework API
+     │
+Runtime Core
+     │
+Plugin System
+     │
+Hardware Abstraction Layer
+     │
+RTOS / Hardware
+```
+
+### 2. Module Architecture
+
+Define each module: responsibility, dependencies (no circular deps).
+
+```
+framework
+ ├── core
+ ├── pipeline
+ ├── scheduler
+ ├── io
+ ├── plugin
+ ├── memory
+ ├── event
+ └── utils
+```
+
+| Module | Responsibility | Dependencies |
+|--------|---------------|--------------|
+
+### 3. Data Model
+
+Core data structures with ownership model, lifecycle, memory reuse, zero-copy capability.
+
+```c
+typedef struct frame {
+    uint8_t  *data;
+    uint32_t  size;
+    uint64_t  pts;
+    uint32_t  flags;
+} frame_t;
+```
+
+### 4. Lifecycle Model
+
+Define states and valid transitions. Invalid transitions must be rejected.
+
+Example: `CREATE → INIT → READY → RUNNING → PAUSED → STOPPED → DESTROYED`
+
+### 5. Concurrency Model
+
+- Threading model: main control thread, worker pool, IO thread
+- Communication: message queue, event loop, ring buffer, lock-free queue
+- Synchronization strategy; per-API thread-safety relative to this model
+
+### 6. Plugin / Extension System
+
+- Registration interface: `register_codec()`, `register_io()`, `register_filter()`
+- Extension methods: static registry, factory, dynamic loading
+- No hardcoded component lists
+
+### 7. Error Handling
+
+Unified error codes across all modules:
+
+```
+FRAMEWORK_OK | FRAMEWORK_ERR_INVALID_ARG | FRAMEWORK_ERR_NO_MEMORY
+FRAMEWORK_ERR_TIMEOUT | FRAMEWORK_ERR_NOT_SUPPORTED
+```
+
+No silent failure; consistent propagation.
+
+### 8. Logging System
+
+Levels: ERROR / WARN / INFO / DEBUG
+Features: module-level control, runtime level adjustment, lightweight.
+
+```c
+LOGE(TAG, "failed to allocate buffer");
+```
+
+### 9. Configuration System
+
+- Compile-time Kconfig + runtime config structs
+- File config formats: TOML / JSON / YAML / INI (consider embedded flash constraints)
+
+### 10. Performance Strategy
+
+- Zero-copy pipeline, memory pool, ring buffer, cache-friendly structures
+- No frequent allocations in hot paths
+- Target metrics: CPU %, heap footprint, latency, lock contention
+
+### 11. Testing Strategy
+
+| Level | Scope |
+|-------|-------|
+| Unit | per-module, mock dependencies |
+| Integration | cross-module data flow |
+| Stress | long-run, resource exhaustion |
+| Performance | latency, throughput benchmarks |
+
+CI integration and regression gates required.
+
+### 12. Directory Structure
+
+```
+framework
+ ├── include      # public headers
+ ├── core
+ ├── pipeline
+ ├── scheduler
+ ├── plugin
+ ├── io
+ ├── memory
+ ├── utils
+ └── examples
+```
+
+### 13. Documentation Deliverables
+
+README.md, Architecture.md, API.md, Extension.md, DeveloperGuide.md
+
+---
+
+## Architecture Review Checklist
+
+Before finalizing:
+
+- [ ] No hardcoded component lists
+- [ ] Thread model fully defined
+- [ ] All lifecycle states and transitions specified
+- [ ] No circular module dependencies
+- [ ] Memory allocation strategy documented
+- [ ] Plugin extension point defined
+- [ ] All public APIs follow `api-design-rules.mdc`
+- [ ] Documentation deliverables listed

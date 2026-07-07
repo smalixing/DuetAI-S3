@@ -1,0 +1,267 @@
+---
+description: ESP-ADF / ESP-IDF C/C++ coding style for header and source files
+globs: **/*.{h,c,cpp}
+alwaysApply: false
+---
+
+# C/C++ Coding Style (ESP-ADF / ESP-IDF)
+
+Reference: [IDF Style Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/contribute/style-guide.html) | [Documenting Code](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/contribute/documenting-code.html)
+
+---
+
+## Header Files
+
+### Section order
+
+1. License / copyright block
+2. Header guard (`#pragma once` or `#ifndef … #define`)
+3. Includes — in this order: C stdlib → FreeRTOS → vendor (ESP-IDF) → user
+4. `#ifdef __cplusplus extern "C" {` — wraps everything below except includes
+5. `#define` macros — two spaces between name and value
+6. `typedef` aliases
+7. Enumerations and structs (see formatting rules below)
+8. Function declarations with Doxygen comments
+9. `#ifdef __cplusplus }` + `#endif`
+10. One blank line at end of file
+
+### Macro alignment
+
+```c
+#define DEFAULT_MAX_WAIT_TIME  (2000 / portTICK_RATE_MS)
+//                            ^^ two spaces before value
+
+When consecutive macro definitions have no blank lines between them and their names have different lengths, 
+align the values to the longest macro name, as shown below.
+
+#define COZE_HTTP_INITIAL_BUF  (1024)
+#define COZE_HTTP_GROWTH_MIN   (1024)
+#define COZE_HTTP_TX_BUFFER    (8192)
+#define COZE_HTTP_TIMEOUT_MS   (10 * 1000)
+```
+
+### Enum formatting
+
+Each public enum has a `/** @brief ... */` Doxygen block above the typedef.
+Each enumerator value has a trailing `/*!< description */` comment (first word uppercase).
+Values right-aligned with `=`; descriptions aligned across all values:
+
+```c
+/**
+ * @brief  Error codes for GMF IO operations
+ */
+typedef enum {
+    ESP_GMF_IO_OK      = ESP_OK,    /*!< Operation successful */
+    ESP_GMF_IO_FAIL    = ESP_FAIL,  /*!< Operation failed */
+    ESP_GMF_IO_ABORT   = -2,        /*!< Operation aborted */
+    ESP_GMF_IO_TIMEOUT = -3,        /*!< Operation timed out */
+} esp_gmf_err_io_t;
+```
+
+For enums used only in source files (private), omit the Doxygen block:
+
+```c
+typedef enum {
+    STATE_IDLE    = 0,
+    STATE_RUNNING = 1,
+    STATE_ERROR   = 2,
+} my_state_t;
+```
+
+### Struct formatting
+
+#### Public API structs (in header files)
+
+Each public struct has a `/** @brief ... */` Doxygen block above the typedef.
+If the `@brief` summary needs more detail, add a blank line after the summary and indent
+the continuation paragraph by 9 spaces from `*` (` *         text`).
+Member inline comments use `/*!< description */` (Doxygen trailing comment), first word uppercase.
+Members aligned to longest type + 2 spaces; comments aligned to longest member name + 2 spaces:
+
+```c
+/**
+ * @brief  GMF object structure
+ *
+ *         This structure represents a generic GMF object with basic functionalities,
+ *         such as creating a new object, deleting an object, and storing object-related
+ *         information.
+ */
+typedef struct esp_gmf_obj_ {
+    struct esp_gmf_obj_  *prev;     /*!< Pointer to the previous object in the list */
+    struct esp_gmf_obj_  *next;     /*!< Pointer to the next object in the list */
+    const char           *tag;      /*!< Tag or identifier associated with the object */
+    void                 *cfg;      /*!< Pointer to the configuration data */
+} esp_gmf_obj_t;
+```
+
+#### Private / internal structs (in source files)
+
+Apply the **same** `/** @brief ... */` + `/*!< ... */` style as public structs.
+GMF core source files (`esp_gmf_task.c`, `esp_gmf_pbuf.c`, etc.) follow this convention.
+Trivial helper structs (e.g., single-purpose linked-list node wrappers with self-evident
+fields) may omit comments:
+
+```c
+/**
+ * @brief  Shared ref-counted container for queue-mode payload delivery.
+ *
+ *         The slot pool only ever grows; slots are recycled via in_use = false so
+ *         all existing slot indices remain permanently stable.
+ */
+typedef struct {
+    uint16_t  ref_count;   /*!< Outstanding delivery references */
+    uint16_t  generation;  /*!< Incremented on each slot reuse */
+    bool      in_use;      /*!< True while ref_count > 0 */
+} my_envelope_t;
+```
+
+### Doxygen function comment
+
+Two spaces after each tag keyword. If `@brief` needs more than one line, add a blank line
+after the summary and indent the continuation paragraph by 9 spaces from `*`:
+
+```c
+/**
+ * @brief  Push video data to RTMP server
+ *
+ *         Encodes and buffers the frame, then flushes to the connected RTMP
+ *         endpoint. Must be called after esp_rtmp_push_connect() completes.
+ *
+ * @note  Non-blocking; returns immediately if the internal buffer is full.
+ *         In that case the caller should retry after a short delay.
+ *
+ * @param[in]   handle      Push handle returned by esp_rtmp_push_open()
+ * @param[in]   video_data  Video frame descriptor; caller retains ownership
+ * @param[out]  if_exist    Set to true if a pending frame already exists
+ *
+ * @return
+ *       - ESP_MEDIA_ERR_OK           On success
+ *       - ESP_MEDIA_ERR_NO_MEM       Not enough memory to buffer send data
+ *       - ESP_MEDIA_ERR_INVALID_ARG  Invalid argument
+ */
+esp_media_err_t esp_rtmp_push_video(rtmp_push_handle_t handle, esp_rtmp_video_data_t *video_data);
+```
+
+---
+
+## Source Files
+
+### Section order
+
+1. License / copyright block
+2. Includes (same order as headers; omit unused headers)
+3. `#define` macros
+4. Local enumerations and structs
+5. Static / const variable definitions
+6. Static function declarations (forward declarations) or implementations
+7. Non-static (public) function implementations
+
+### Static / const variable example
+
+```c
+static const char *TAG = "AUDIO_ELEMENT";
+static const int STOPPED_BIT = BIT0;
+```
+
+---
+
+## `switch` Statement Style
+
+- Space between `switch`, `()`, and `{}`
+- `case` indented 4 spaces relative to `switch`
+- Each `case` on its own line (never same line as `switch`)
+- Braces in `case` required only when local variables are declared
+
+```c
+switch (in_len) {
+    case AEL_IO_ABORT:
+        ESP_LOGW(TAG, "IN-[%s] AEL_IO_ABORT", el->tag);
+        break;
+    case AEL_IO_DONE:
+    case AEL_IO_OK:
+        ESP_LOGI(TAG, "IN-[%s] AEL_IO_DONE,%d", el->tag, in_len);
+        break;
+    default:
+        ESP_LOGE(TAG, "IN-[%s] Input return not support,ret:%d", el->tag, in_len);
+        break;
+}
+```
+
+---
+
+## General Rules
+
+- **Line width limit: 120 characters.** Do not wrap lines at 80 characters; only break when a line exceeds 120 columns.
+- Two spaces before any inline `/* … */` comment
+- Prefer `static const` declaration order (instead of `const static`)
+- No unused `#include` in source files
+- Multi-line macro definitions follow struct-member order for C++ compatibility
+- All comments in English (unless user explicitly requests otherwise)
+
+## Logging (ESP_LOG)
+
+### Log levels
+
+| Level | When to use |
+|---|---|
+| `ESP_LOGE` | Programming errors: NULL args, OOM, module not initialised, invalid state, unexpected NOT_FOUND |
+| `ESP_LOGW` | Non-fatal / recoverable: dropped events, not-found during teardown, partial failures |
+| `ESP_LOGI` | Normal lifecycle only: create / destroy of long-lived objects |
+| `ESP_LOGD` | Verbose debug; disabled in release builds |
+
+### Rules
+
+- **Every error-path `return` must have at least one `ESP_LOGE` or `ESP_LOGW` before it.**
+- Do not add a log if a called helper already logs the same failure (note this in a comment: `/* helper already logged */`).
+- Do not log on hot paths (dispatch loops, queue send success, callback invocation). Log only on error conditions within those paths.
+- Log messages must identify the **operation** and include **relevant state** (domain name, event_id, error code) so the cause is clear without a debugger.
+- Do **not** log raw internal hash keys or pointer addresses in normal-path messages; prefer human-readable names (domain string, index).
+- Log message text **must start with a capital letter**.
+- `ESP_LOGI` lifecycle messages use the format `Operation 'name': result`, e.g. `Create 'wifi': domain registered`.
+- Error messages use the format `Operation failed: reason`, e.g. `Subscribe failed: hub or info is NULL`.
+- Warning messages use the format `Operation: reason`, e.g. `Publish 'wifi'/3: subscriber queue full, event dropped`.
+
+### Examples
+
+```c
+/* CORRECT */
+if (!hub || !info) {
+    ESP_LOGE(TAG, "Subscribe failed: hub or info is NULL");
+    return ESP_ERR_INVALID_ARG;
+}
+if (xQueueSend(q, &msg, 0) != pdTRUE) {
+    ESP_LOGW(TAG, "Publish '%s'/%u: subscriber queue full, event dropped",
+             event->domain, (unsigned)event->event_id);
+}
+ESP_LOGI(TAG, "Create '%s': domain registered", domain);
+
+/* WRONG */
+if (!hub) { return ESP_ERR_INVALID_ARG; }           /* silent error — forbidden */
+ESP_LOGE(TAG, "error 0x%08x", (unsigned)key);       /* raw key, no context */
+ESP_LOGI(TAG, "dispatching event %d", id);           /* log on hot path */
+ESP_LOGE(TAG, "subscribe: null arg");                /* lowercase first letter */
+```
+
+---
+
+## Assignment Operator Formatting (inside functions)
+
+- Use exactly **one space** before and after `=` in all assignments inside function bodies
+- Do **not** pad with extra spaces to column-align `=` across consecutive lines
+- This applies to all assignment statements: simple, struct member, pointer dereference, designated initializers
+
+```c
+/* CORRECT */
+env->in_use = true;
+env->event = *event;
+env->release_cb = release_cb;
+*out_cb = NULL;
+*out_ctx = NULL;
+
+/* WRONG — do not column-align = */
+env->in_use      = true;
+env->event       = *event;
+env->release_cb  = release_cb;
+*out_cb      = NULL;
+*out_ctx     = NULL;
+```

@@ -1,0 +1,93 @@
+---
+description: ESP-IDF environment path configuration for esp-adf-internal or esp-gmf projects
+alwaysApply: true
+---
+
+# ESP-IDF Environment
+
+## Environment Variable
+
+```
+IDF_PATH = /home/maojianxin/workspace/esp-adf-internal/esp-idf
+IDF_VERSION = 5.5.2
+```
+
+## Build & Test Commands
+
+When running any build, flash, monitor, or test command, always export the IDF environment first:
+
+```bash
+export IDF_PATH=/home/maojianxin/workspace/esp-adf-internal/esp-idf
+source $IDF_PATH/export.sh
+```
+
+Or inline:
+
+```bash
+IDF_PATH=/home/maojianxin/workspace/esp-adf-internal/esp-idf source $IDF_PATH/export.sh && idf.py build
+```
+
+## Code Reference
+
+When writing or reviewing **any** C code for this project, the following two locations under
+`$IDF_PATH` are the ground truth — always consult them before writing any API call, type, macro,
+or CMake dependency.  Do not rely on memory or external documentation alone.
+
+### 1. Component Headers — `$IDF_PATH/components/`
+
+All 109 IDF components live here.  For any IDF API you intend to use:
+- Read the corresponding header under `$IDF_PATH/components/<component>/include/` first.
+- Verify the exact function signature, parameter types, and return type.
+- Check for any `@deprecated` or `@note` annotations that apply to IDF 5.5.2.
+
+Examples of frequently referenced paths (non-exhaustive):
+
+| API area | Header path |
+|---|---|
+| OTA / app update | `components/app_update/include/esp_ota_ops.h` |
+| App description | `components/esp_app_desc/include/esp_app_desc.h` |
+| HTTP client | `components/esp_http_client/include/esp_http_client.h` |
+| HTTPS OTA | `components/app_update/include/esp_https_ota.h` |
+| Flash partitions | `components/esp_partition/include/esp_partition.h` |
+| NVS | `components/nvs_flash/include/nvs.h` |
+| Wi-Fi | `components/esp_wifi/include/esp_wifi.h` |
+| FreeRTOS | `components/freertos/FreeRTOS-Kernel/include/` |
+| Error codes | `components/esp_common/include/esp_err.h` |
+| IDF version macros | `components/esp_common/include/esp_idf_version.h` |
+| System / restart | `components/esp_system/include/esp_system.h` |
+| Logging | `components/log/include/esp_log.h` |
+| Timer | `components/esp_timer/include/esp_timer.h` |
+
+### 2. Official Examples — `$IDF_PATH/examples/`
+
+The examples are the **canonical usage reference** for every IDF feature.  Before writing new
+integration code, check whether a relevant example exists:
+
+```
+$IDF_PATH/examples/
+  bluetooth/       — BLE / Classic BT examples
+  network/         — TCP/IP, MQTT, HTTP, WebSocket
+  protocols/       — HTTP server/client, HTTPS OTA, MQTT, Modbus
+  storage/         — NVS, FAT, SPIFFS, SD card, wear levelling
+  peripherals/     — GPIO, UART, SPI, I2C, ADC, DAC, PWM, ...
+  wifi/            — Station, AP, scan, provisioning
+  system/          — Heap, task watchdog, deep sleep, console
+  security/        — Secure boot, flash encryption, NVS encryption
+  lowpower/        — Light sleep, deep sleep power management
+  get-started/     — hello_world, blink (baseline reference)
+```
+
+Use example code as a reference for:
+- Correct initialisation sequences
+- Typical configuration struct values
+- Error handling patterns
+- CMakeLists.txt component dependencies
+
+### 3. IDF Version Policy
+
+- Baseline: **IDF 5.5.2** (`ESP_IDF_VERSION_VAL(5, 5, 2)`).
+- Use IDF 5.x APIs and CMake style (`idf_component_register()`).
+- Do **not** use deprecated IDF 4.x patterns (`register_component()`,
+  `COMPONENT_REQUIRES`, etc.).
+- When writing version-gated code (`#if ESP_IDF_VERSION >= ...`), use
+  `ESP_IDF_VERSION_VAL(5, 5, 2)` as the known-good baseline.

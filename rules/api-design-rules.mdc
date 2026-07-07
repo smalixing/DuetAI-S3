@@ -1,0 +1,112 @@
+---
+description: C API design rules — naming, signatures, lifecycle, error, thread-safety, ABI, Doxygen; apply when writing or reviewing any public C API
+alwaysApply: true
+---
+
+# C API Design Rules
+
+Apply these rules when writing or reviewing any public C API header or implementation.
+
+---
+
+## Naming
+
+- One prefix per module: `gmf_`, `audio_`, `esp_`, etc.
+- Verb–object style: `pipeline_create()`, `buffer_alloc()`, `stream_start()`
+- Opaque handle types: prefer forward-declared struct pointers (e.g. `typedef struct module *module_handle_t;`) instead of `void *`; never expose internal struct layout in public headers
+- Types: `_t` suffix; constants/enums: `MODULE_ERR_XXX` prefix
+
+## Function Signatures
+
+- Parameter order: context/config → input buffers → output buffers → optional params last
+- Use a config struct when there are more than 3–4 arguments
+- `const` on all input-only pointers
+- Hide internal struct layout in `.c` or private header; forward-declare only in public header
+
+## Resource and Lifecycle
+
+- Every `*_create()` / `*_open()` has a matching `*_destroy()` / `*_close()`
+- Document ownership explicitly: who allocates, who owns, who frees
+- After `*_destroy(handle)`, handle is invalid — document this; caller must not reuse it
+- All error paths must release every resource acquired so far (no partial leaks)
+- Document cleanup order when multiple resources are created in sequence
+
+## Error Semantics
+
+- One integral error type per module (`int` or `module_err_t`); no mixed conventions
+- No silent failure — always return an error code or use an out-parameter
+- Document which error code applies to each precondition violation
+- On error, specify whether resources are partially created and who cleans up
+
+## Thread-Safety Contract
+
+- State per API (or API group): thread-safe / not thread-safe / safe with different handles
+- No hidden shared state; prefer per-handle state
+- Returned pointers to internal data must specify validity window (e.g. "valid until next call")
+- Document any APIs that must not be called concurrently
+
+## Configuration and Defaults
+
+- Config structs must have a `get_defaults()` helper or documented zero-init defaults
+- Document compile-time vs runtime configuration separately
+- Validate config at `create`/`open`; return `ERR_INVALID_ARG` for out-of-range values
+
+## ABI Stability
+
+- Add `uint32_t reserved[N]` or `void *reserved` and a `version` / `struct_size` field to config structs
+- Prefer function pointers or feature flags over many near-identical functions
+- Never add fields to a public struct without bumping version
+
+## Embedded Constraints
+
+- **Stack:** avoid large local buffers in API entry points; document if stack use is significant
+- **Heap:** document whether the API allocates ("may allocate") or requires caller-provided buffer
+- **Blocking:** document any blocking call and its timeout behavior
+- **ISR:** explicitly list ISR-safe APIs; all others are assumed non-ISR-safe
+- **Flash:** avoid macro-heavy or large inline APIs that increase code size
+
+## Per-API Doxygen Comment (required for all public APIs)
+
+```c
+/**
+ * @brief  One-line summary of what this function does
+ *
+ * @note   Any important constraint or precondition.
+ *
+ * @param[in]   handle   Opaque handle returned by module_create()
+ * @param[in]   config   Pointer to configuration struct; caller retains ownership
+ * @param[out]  result   Populated on success; undefined on error
+ *
+ * @return
+ *       - MODULE_ERR_OK           On success
+ *       - MODULE_ERR_INVALID_ARG  handle or config is NULL
+ *       - MODULE_ERR_NO_MEM       Internal allocation failed
+ */
+module_err_t module_do_something(module_handle_t handle,
+                                 const module_config_t *config,
+                                 module_result_t *result);
+```
+
+## Example API Shape
+
+```c
+module_handle_t module_create(const module_config_t *config);
+int             module_start(module_handle_t handle);
+int             module_stop(module_handle_t handle);
+void            module_destroy(module_handle_t handle);
+```
+
+---
+
+## API Review Checklist
+
+Before merging any public API:
+
+- [ ] Consistent naming prefix and verb–object style
+- [ ] Opaque types; no internal struct layout in public header
+- [ ] `create`/`destroy` or `open`/`close` pairs; ownership documented
+- [ ] Unified error codes; no silent failures
+- [ ] Thread-safety contract documented per API or group
+- [ ] Config structs have `version`/`reserved` for ABI evolution
+- [ ] Preconditions and return codes documented in Doxygen
+- [ ] Embedded constraints (stack / heap / blocking / ISR) addressed

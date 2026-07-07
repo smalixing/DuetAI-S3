@@ -1,0 +1,43 @@
+---
+description: ADF/GMF example README structure and example code review (GMF template)
+alwaysApply: true
+---
+
+# ADF / GMF Example Documentation and Code Review
+
+Use the official ESP-GMF example README templates as the **structural source of truth** whenever you **author, edit, or review a user-facing example**—regardless of folder name or path (e.g. `examples/`, `gmf_examples/`, `demo/`, `samples/`, `packages/.../examples/`, or a standalone example project directory). Do **not** apply this framework to **`test_apps/`** (automated test apps). Do **not** impose this README layout on non-example components or docs unless the user explicitly asks.
+
+**Templates:**
+
+- English: [GMF_TEMPLATE_EXAMPLE_README_EN.md](https://github.com/espressif/esp-gmf/blob/main/docs/GMF_TEMPLATE_EXAMPLE_README_EN.md)
+- Chinese: [GMF_TEMPLATE_EXAMPLE_README_CN.md](https://github.com/espressif/esp-gmf/blob/main/docs/GMF_TEMPLATE_EXAMPLE_README_CN.md)
+
+Use the Chinese template when writing or reviewing **`README_CN.md`**; structure and requirements match the English template.
+
+## README structure (align with the template)
+
+1. **Title** — Real example name (no `_placeholder_` italic template text).
+2. **Language / difficulty** — Link between `README.md` and `README_CN.md` when bilingual; mark **one** difficulty line (Basic / Regular / Complex) per template meaning.
+3. **Example Brief** — Functional description + technical angle (which pipeline/elements/features are shown).
+4. **Typical Scenarios** — User-facing use cases.
+5. **Resources / Prerequisites / Run Flow / File Structure** — Include when relevant; omit or shorten sections that do not apply (template marks some as optional; the **published README must not** contain the words `recommended` or `optional` — see template header).
+6. **Environment Setup** — Hardware; **Default IDF Branch** using the template’s two variants (with or without `esp_board_manager`); software extras if needed.
+7. **Build and Flash** — IDF env (`install.sh` / `export.sh`), `cd` to **this** example path (replace `$YOUR_GMF_PATH`/placeholders with real relative paths from repo root), prebuild (`prebuild.sh` / `prebuild.ps1`) when the example uses board manager, **menuconfig** bullets that match this example’s real Kconfig paths, then `idf.py build` and `idf.py -p PORT flash monitor`.
+8. **How to Use** — Interaction, expected behaviour, **Log Output** (continuous, unedited representative log; note key lines).
+9. **Troubleshooting** — Concrete symptoms + fixes (strongly encouraged by template).
+10. **Technical Support** — Forum / issue links; use **ESP-ADF** or **esp-gmf** issue URLs when the example lives in that repo.
+
+**Template hygiene:** Remove all `_italic_` placeholder instructions; replace sample log blocks with logs from **this** example when practical.
+
+**Consistency with project docs style:** Follow `docs-output.mdc` (concise, few icons). The template’s difficulty stars are acceptable if you keep the rest plain.
+
+## Example code review (same template lens)
+
+- **Truthful docs:** README sections match what `main`/app code does (features, hardware, Wi‑Fi, SD paths, servers).
+- **Paths and versions:** `cd` paths, component locations, embed-audio script paths, and IDF version statements match the repo and CMake/board manager usage.
+- **Configuration:** Documented `menuconfig` items exist and are named correctly for this example.
+- **Assets / scripts:** Embedded files, `prebuild` flow, and pytest scripts are mentioned if present in the tree.
+- **Failure modes:** Troubleshooting entries correspond to real error strings users see.
+- **ADF vs GMF:** For ESP-ADF examples, adapt template wording (ADF paths, dependencies, issue links) while **keeping the same section order and depth**.
+
+When reviewing only code (no README change), still check that a README following this framework would be accurate; request README updates when behaviour or setup is non-obvious.

@@ -1,0 +1,341 @@
+---
+description: Test case design and implementation rules — applies when writing or reviewing unit, integration, or stress tests for any embedded component
+globs: "**/{test,pc_test,test_apps}/**/*.{c,cpp,h}"
+alwaysApply: false
+---
+
+# Test Implementation Rules
+
+---
+
+## 1. Test Case Naming
+
+Format: `"<subject> - <scenario>: <expected outcome>"`
+
+```c
+TEST_CASE("create - NULL handle arg returns INVALID_ARG",          "[module]")
+TEST_CASE("send - N receivers, release_cb called exactly once",    "[module]")
+TEST_CASE("reentrant - concurrent init same key: all return OK",   "[module]")
+```
+
+- Name is self-documenting without opening the body
+- Include the triggering condition AND the expected result
+- Tag with `[module_name]`; concurrent tests append `[reentrant]`
+
+---
+
+## 2. Test Group Structure
+
+Organize into numbered groups, one group per API or feature cluster.
+Mandatory groups (apply all that are relevant to the module's public API):
+
+| Group | Focus |
+|---|---|
+| 1 | Create / init / destroy — boundary + basic lifecycle |
+| 2 | Per-API parameter boundary — NULL, empty, zero, out-of-range, invalid handle |
+| 3 | Normal operation — expected behavior with all valid inputs |
+| 4 | Asynchronous / deferred delivery — queue or callback delivery, acknowledge |
+| 5 | Resource ownership and release — ref-count timing, transfer, NULL release_cb |
+| 6 | Remove / unregister — basic removal, wildcard removal, error paths |
+| 7 | Post-destroy safety — all APIs reject a destroyed handle gracefully |
+| 8 | Capacity / overflow — full buffer, pool exhaustion, drop behavior |
+| 9 | Instance isolation — multi-instance non-interference, destroy-one-not-all |
+| 10 | Stress — high subscriber/event/instance count, saturation, rapid cycles |
+| 11 | Concurrent — all API combinations across simultaneous RTOS tasks |
+
+---
+
+## 3. Boundary and Invalid Argument Coverage
+
+For **every parameter** of **every public API**, write at least one test for each:
+
+- NULL pointer → `ERR_INVALID_ARG`
+- Empty string / zero value → `ERR_INVALID_ARG`
+- Out-of-range value (e.g. index > capacity) → `ERR_INVALID_ARG`
+- Destroyed or unregistered handle → `ERR_NOT_FOUND`
+- Mutually exclusive fields both NULL or both set → `ERR_INVALID_ARG`
+
+No API parameter may be left without a boundary test.
+
+---
+
+## 4. Error Code Coverage
+
+Every documented return code must have at least one test that:
+1. Triggers the exact condition that produces the code
+2. Asserts `TEST_ASSERT_EQUAL(EXPECTED_CODE, api_call(...))`
+
+Maintain a comment block at the top of the test file mapping each return code to the
+test case(s) that exercise it.
+
+---
+
+## 5. Resource Lifecycle — Every Test Self-Contained
+
+- Each test creates its own resources (handles, queues, semaphores, heap buffers)
+- Each test destroys all resources before returning, on every path
+- No shared mutable handles between test cases
+- Assert allocation success immediately after every `create` / `malloc` / OS primitive call
+
+```c
+TEST_CASE("...", "[module]")
+{
+    module_handle_t h = NULL;
+    TEST_ASSERT_EQUAL(MODULE_OK, module_create("name", &h));
+    /* ... test body ... */
+    TEST_ASSERT_EQUAL(MODULE_OK, module_destroy(h));  /* always last */
+}
+```
+
+Cleanup order: free dependent resources (queues, semaphores) before destroying the
+parent handle when they are still referenced by that handle.
+
+---
+
+## 6. State Verification — Assert Side Effects, Not Just Return Codes
+
+Every test must verify the **observable effect**, not only the return code:
+
+```c
+/* BAD */
+TEST_ASSERT_EQUAL(MODULE_OK, module_send(h, &msg));
+
+/* GOOD */
+TEST_ASSERT_EQUAL(MODULE_OK, module_send(h, &msg));
+TEST_ASSERT_EQUAL_INT(1, ctx.receive_count);
+TEST_ASSERT_EQUAL_INT(EXPECTED_ID, ctx.last_id);
+```
+
+Use typed assertions (`EQUAL_INT`, `EQUAL_PTR`, `NOT_NULL`, `NULL`, `GREATER_OR_EQUAL`)
+— never plain `TEST_ASSERT` for value comparisons.
+
+---
+
+## 7. Ref-counted Resource Release — Exact Timing and Count
+
+When the module uses ref-counted resources with a release callback:
+
+| Scenario | Expected release_count |
+|---|---|
+| Synchronous delivery only (no deferred consumer) | 1, before send returns |
+| 1 deferred consumer, after acknowledge | 1 |
+| N deferred consumers, after k acknowledges (k < N) | 0 |
+| N deferred consumers, after all N acknowledge | exactly 1 |
+| Consumer queue full (dropped) | 1, immediately after send |
+| Acknowledge called twice with stale token | still 1 (no double-free) |
+
+Assert `release_count` at every **intermediate** step, not only at the end.
+
+---
+
+## 8. Idempotency and Guard Tests
+
+Verify that repeated or redundant operations are safe and produce consistent results:
+
+- Same-key create called twice → same handle returned, no duplicate resource
+- Same-key create called N times sequentially → handle pointer stable, side-effects not multiplied
+- Acknowledge / done called twice with the same token → second call safe, callback not re-invoked
+- `destroy` called twice → second call returns `ERR_NOT_FOUND`, no crash
+- Register then unregister N times in a loop → no leak, no delivery after last unregister
+
+---
+
+## 9. Post-Destroy Safety
+
+After destroying a handle, every API that accepts that handle must return `ERR_NOT_FOUND`
+and must not crash or produce phantom side effects:
+
+```c
+TEST_ASSERT_EQUAL(MODULE_OK, module_destroy(h));
+TEST_ASSERT_EQUAL(MODULE_ERR_NOT_FOUND, module_send(h, &msg));
+TEST_ASSERT_EQUAL_INT(0, ctx.receive_count);  /* no phantom delivery */
+```
+
+---
+
+## 10. Instance Isolation
+
+- Operation on instance A must not affect instance B or its registered consumers
+- Destroy of instance A must not affect instance B or its state
+- Assert both the positive (A affected) and the negative (B unaffected) in the same test
+
+---
+
+## 11. Stress Tests — Required Dimensions
+
+Every module must have stress tests covering all applicable dimensions:
+
+| Dimension | Minimum scale |
+|---|---|
+| Many consumers, one operation | 30 consumers |
+| One consumer, many operations | 200 operations |
+| Many instances, each with multiple consumers | 10 instances × 3 consumers |
+| Internal pool / capacity saturation | fill to the documented maximum |
+| Rapid register / unregister cycle | 50 iterations |
+| Rapid create / destroy cycle | 20 iterations |
+
+Verify **exact counts** at the end of each stress test, not just "no crash".
+
+---
+
+## 12. Concurrent Tests — Required Pattern
+
+Use a **two-semaphore barrier** to synchronise all tasks to enter simultaneously:
+
+```c
+typedef struct {
+    semaphore_t arrive;  /* each task signals arrival */
+    semaphore_t go;      /* coordinator releases all at once */
+    int         n;       /* number of tasks */
+} barrier_t;
+```
+
+Required concurrent scenarios (adapt names to the module's API):
+
+| # | Scenario | Pass condition |
+|---|---|---|
+| C1 | Concurrent create, same key | All tasks return OK; all receive identical handle |
+| C2 | Concurrent register from N tasks, then one operation | All N consumers receive the operation |
+| C3 | Concurrent operations from N tasks (M each) | Total delivery count = N × M |
+| C4 | Producer-consumer race (half register, half operate simultaneously) | No crash, no deadlock |
+| C5 | Concurrent deferred producers, drain and acknowledge | `release_count` == items actually received |
+| C6 | Sequential idempotent create N times (single task) | Handle stable; side-effects occur exactly once |
+
+Task implementation rules:
+- Stack: at least 4× the minimum stack size for the RTOS in use
+- Priority: one level above idle
+- Every task function must terminate cleanly via the RTOS task deletion API;
+  never return from a task function
+
+---
+
+## 13. Test Helper Design
+
+Place all shared helpers above the first test group in a clearly marked block:
+
+```c
+/* ── Shared test helpers ──────────────────────────────────── */
+
+typedef struct {
+    int receive_count;   /* incremented on each delivery */
+    int last_id;         /* last received event/message id */
+    int release_count;   /* incremented in release callback */
+} test_ctx_t;
+
+static void count_cb(const event_t *e, void *ctx) { ... }
+static void release_cb(const void *data, void *ctx) { ... }
+static data_t *make_data(int val) { ... }  /* returns NULL-checkable pointer */
+```
+
+Rules:
+- Context structs use plain `int` counters, zero-initialised with `= {0}`
+- Release callbacks are responsible for freeing the data they receive
+- Data factory helpers must return a `NULL`-checkable pointer; test must assert non-NULL
+
+---
+
+## 14. What Must NOT Be in Tests
+
+- No shared global mutable state between test cases
+- No timed sleep as a substitute for synchronisation — use semaphores or condition variables
+- No unchecked allocation — assert non-NULL immediately after every `create` / `malloc`
+- No test that asserts only a return code without verifying the observable side effect
+- No test that leaks any resource (queue, semaphore, heap buffer, handle) on any code path
+
+---
+
+## 15. Test Report
+
+Write one `TEST_REPORT.md` per test binary, placed in the same directory as the test source.
+Update the report every time the test suite is re-run.
+This mandatory report is an explicit exception to the minimal-doc constraint in `docs-output.mdc`.
+
+### Required sections
+
+**Header block** — one field per line, no prose:
+
+```
+Date:      YYYY-MM-DD
+Platform:  <OS name + version> (<arch>)
+Compiler:  <name + version>
+RTOS:      <name + version> (<port>)
+Framework: <test framework name + version>
+Source:    <relative path to test file>
+```
+
+**Overall summary** — single table:
+
+| Item | Value |
+|---|---|
+| Total | N |
+| Pass | N |
+| Fail | N |
+| Skip | N |
+| Result | **PASS** / **FAIL** |
+
+**Per-group detail** — one sub-section per group, heading format:
+`### Group N — <feature> (<count> cases)`
+
+Each sub-section contains:
+- One sentence stating what the group validates (coverage angle, not test names)
+- A result table:
+
+| # | Test case name | Result |
+|---|---|---|
+
+For stress groups, add a `Parameters` column with the scale values used.
+For concurrent groups, add a `Concurrency config` column (e.g. `8 tasks × 20 ops`).
+
+Test case names in the table must match the `TEST_CASE(...)` string exactly.
+
+**Code path coverage** — two tables:
+
+*Covered:*
+
+| Code path / branch | Covered by test # |
+|---|---|
+
+Map every public-API branch (NULL guard, error return, fast path, slow path,
+ref-count decrement, release trigger, drop/overflow) to the test number(s) that reach it.
+
+*Uncovered:*
+
+| Path | Reason | Injection needed |
+|---|---|---|
+
+List only paths that require fault injection (allocation failure, hardware error).
+This table must always be present; write `None` if all paths are covered.
+
+**Log summary** — list only log lines emitted because a test intentionally triggers
+a warning or error path:
+
+```
+W (...): <message>  — triggered by test #N, #M
+```
+
+Omit this section if no such log lines appear.
+
+**Build configuration** — key compile-time constants that affect test behavior:
+capacity limits, pool sizes, task counts, RTOS port, heap allocator variant.
+
+**Resource overhead** — measure the module under test in isolation:
+
+| Metric | Value | Measurement method |
+|---|---|---|
+| RAM — static | N bytes | `size` / map file, `.bss` + `.data` of the module |
+| RAM — heap peak | N bytes | heap-before minus heap-after a representative operation sequence |
+| Code size | N bytes | `size` / map file, `.text` + `.rodata` of the module |
+| CPU per operation | N µs / N cycles | timestamp delta around the hot path; `esp_timer_get_time()` or cycle counter |
+
+Rules:
+- Report RAM heap peak for the worst-case scenario (maximum subscribers / instances active simultaneously)
+- Report code size for the final release build (optimisation flags on, debug off)
+- CPU measurement is optional when a cycle counter or high-resolution timer is unavailable; mark the cell `N/A` with the reason
+- If the module imposes a documented resource budget, add a pass/fail column against that budget
+
+### Formatting rules
+
+- Result values: `Pass` or `Fail` — never `OK`, `FAIL`, `✓`, or `✗`
+- No prose paragraphs inside group tables
+- Uncovered path table must always appear, even if empty (`None`)
+- Resource overhead table must always appear; use `N/A` for metrics that cannot be measured in the current environment

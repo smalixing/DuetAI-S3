@@ -1,0 +1,35 @@
+---
+description: Embedded project implementation guidelines — applies to all ESP-ADF / ESP-IDF development
+alwaysApply: true
+---
+
+# Embedded Project Development Guidelines
+
+## Design Principles
+
+- Follow SOLID principles: Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion
+- No hardcoding: use configuration structures and dynamic registration instead of hardcoded types, names, or dispatch tables
+- No magic numbers: all constants must be named
+- Mutable global variables are forbidden; use context/handle structs
+- `static const` read-only globals are allowed when they carry no runtime state and improve clarity
+
+## Implementation (ESP-IDF Specific)
+
+- Use ESP-IDF native components when available; do not reinvent what IDF already provides
+- Prefer standard libraries over custom implementations
+- Never invent function signatures — verify against IDF headers or official docs before writing any call
+- Log errors with `ESP_LOGE`; use `ESP_LOGW` / `ESP_LOGI` for warnings and info
+
+## Testing
+
+- Code must compile without warnings (`-Wall -Werror` clean)
+- Verify with actual ESP-IDF components, not stubs alone
+- Test with working end-to-end examples
+- Handle edge cases: NULL inputs, empty buffers, timeout, resource exhaustion
+
+## Anti-Patterns
+
+- Hardcoded lists, names, or method dispatch tables
+- Magic numbers without named constants
+- Inventing function signatures without verifying against IDF headers
+- Automatically generating summary, changelog, or analysis documents

@@ -1,0 +1,27 @@
+---
+description: LLM documentation output style - minimal files, no icons, concise format
+alwaysApply: true
+---
+
+# Documentation Output Rules
+
+When generating documentation (README, guides, etc.):
+
+1. **Only necessary files**
+   - Create only essential docs (e.g. README when needed).
+   - Do not add extra docs (CONTRIBUTING, CHANGELOG, LICENSE placeholders, etc.) unless explicitly requested.
+   - Exception: if another active rule explicitly requires a doc artifact (for example `TEST_REPORT.md` for tests), treat it as necessary and keep it updated.
+
+2. **Format**
+   - Use few or no icons/emojis in documentation.
+   - Prefer plain headings, lists, and code blocks.
+   - Keep structure simple and scannable.
+
+3. **Tone**
+   - Concise over decorative.
+   - Clear section titles and short paragraphs.
+
+4. **Maintenance**
+   - Update existing documentation when behaviour or API changes; do not leave stale docs.
+   - Include concise usage examples in code comments (not in separate summary files).
+   - Do not automatically generate summary, changelog, or analysis documents unless explicitly requested.

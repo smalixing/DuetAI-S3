@@ -1,0 +1,72 @@
+---
+description: C API & implementation code review — error headers, esp_err_t, Doxygen @return, no function comments in .c, includes, logging
+globs: **/*.{h,c,cpp}
+alwaysApply: false
+---
+
+# C Code Review (API & Implementation)
+
+Use this checklist when **reviewing** or **finishing** C headers and sources. Layout and general logging rules are defined in `esp-adf-internal/.cursor/rules/c-coding-style.mdc`; this file adds **review-specific** gates.
+
+---
+
+## Error codes and file layout
+
+- [ ] **Error return definitions** for the module (macros, enums, or dedicated error space) live in a **dedicated header** (or clearly separated dedicated file), not mixed into unrelated headers.
+- [ ] **Header** structure follows `c-coding-style.mdc` → *Header Files* (section order, guards, includes, `extern "C"`, typedefs, public API).
+- [ ] **Source** structure follows `c-coding-style.mdc` → *Source Files* (includes, locals, statistics, forwards, implementations).
+
+---
+
+## Return type contract
+
+- [ ] **Return type is `esp_err_t`** for status-only results. **Do not** use the return value to pass output data; use `out` parameters, structs, or separate accessors.
+- [ ] Header Doxygen lists **every** return code the implementation can return for that function — **complete and accurate** (no missing codes, no obsolete codes).
+
+---
+
+## Doxygen `@return` alignment
+
+- [ ] After `@return`, each line uses: ` *       - <CODE>  <description>`.
+- [ ] **Align descriptions** to one column: take the **longest** return token in that block, then add **two spaces**; all description text starts at that column.
+- [ ] The **success** line description starts with an **uppercase** letter (e.g. `On success`).
+- [ ] **Error** lines describe the condition (e.g. `If svc is NULL`), aligned to the same column as other descriptions.
+
+Example (longest token `ESP_ERR_INVALID_ARG` sets the description column):
+
+```c
+ * @return
+ *       - ESP_OK                     On success
+ *       - ESP_ERR_INVALID_ARG        If svc is NULL
+ *       - ESP_ERR_NO_MEM             If allocation fails
+```
+
+---
+
+## Includes
+
+- [ ] **Include only what is used** in each `.h` and `.c`. Remove unused `#include` lines.
+- [ ] Keep **include order** consistent with `c-coding-style.mdc` (stdlib → FreeRTOS → ESP-IDF → project).
+
+---
+
+## No function comments in source (`.c`)
+
+- [ ] **Do not** add any description, summary, or explanation for a function in `.c` files — no prose above the function, no `@brief`, no block-comment header stating what the function does. All contract documentation belongs in the corresponding `.h` declaration.
+- [ ] **Do not** add Doxygen, block comments, or `//` banners **above function definitions** in `.c` files (public or `static`). Document the contract in the **header** for public APIs; keep implementations readable without per-function commentary.
+- [ ] **Do not** use comments **inside function bodies** to restate what the code does line-by-line. Exception: brief notes **required** by `c-coding-style.mdc` (e.g. `/* helper already logged */`) or unavoidable non-obvious invariants — keep those minimal and in English.
+
+---
+
+## Error-path logging (public API)
+
+- [ ] For each **user-facing** function, **each** error return path has **exactly one** `ESP_LOGE` or `ESP_LOGW` immediately reflecting that failure (not zero logs; avoid duplicate logs on the same path).
+- [ ] Message content should **map cleanly** to the returned `esp_err_t` so logs and return codes match during triage.
+- [ ] Respect exceptions documented in `c-coding-style.mdc` (e.g. callee already logged — short comment; avoid noisy logs on documented hot paths).
+
+---
+
+## Quick cross-checks
+
+- [ ] No silent `return` on error without a log (unless explicitly exempted per style guide).
+- [ ] Public symbols and Doxygen in `.h` stay in sync with `.c` behaviour.
