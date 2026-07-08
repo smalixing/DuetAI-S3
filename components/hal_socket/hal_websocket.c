@@ -300,6 +300,11 @@ static int _ws_handle_control_frame(network_t *pNetwork, uint32_t timeout_ms, ui
 
 int hal_ws_read(void *ctx, uint8_t *buf, int len, uint32_t timeout_ms)
 {
+    return hal_ws_read_ex(ctx, buf, len, NULL, timeout_ms);
+}
+
+int hal_ws_read_ex(void *ctx, uint8_t *buf, int len, int *opcode, uint32_t timeout_ms)
+{
     network_t *pNetwork = (network_t *)ctx;
 
     uint8_t ws_header[MAX_WEBSOCKET_HEADER_SIZE];
@@ -315,7 +320,7 @@ int hal_ws_read(void *ctx, uint8_t *buf, int len, uint32_t timeout_ms)
     }
 
     uint8_t fin = (ws_header[0] >> 7) & 0x01;
-    uint8_t opcode = ws_header[0] & 0x0f;
+    uint8_t frame_opcode = ws_header[0] & 0x0f;
     uint8_t mask = (ws_header[1] >> 7) & 0x01;
     uint32_t payload_len = ws_header[1] & 0x7f;
 
@@ -350,11 +355,14 @@ int hal_ws_read(void *ctx, uint8_t *buf, int len, uint32_t timeout_ms)
         return HAL_WS_ERR;
     }
 
-    if (opcode & WS_OPCODE_CONTROL_FRAME)
-        return _ws_handle_control_frame(pNetwork, WS_READ_MAX_TIMEOUT, payload_len, opcode);
+    if (frame_opcode & WS_OPCODE_CONTROL_FRAME)
+        return _ws_handle_control_frame(pNetwork, WS_READ_MAX_TIMEOUT, payload_len, frame_opcode);
 
-    if (!fin || opcode == WS_OPCODE_CONT)
-        hal_log_warn("fragmented frame not supported (fin=%d, opcode=%d), treated as standalone", fin, opcode);
+    if (!fin || frame_opcode == WS_OPCODE_CONT)
+        hal_log_warn("fragmented frame not supported (fin=%d, opcode=%d), treated as standalone", fin, frame_opcode);
+
+    if (opcode)
+        *opcode = frame_opcode;
 
     uint32_t drop_len = 0;
 
