@@ -1,0 +1,10 @@
+#ifndef __JOYINSIDE_PARAMS_H
+#define __JOYINSIDE_PARAMS_H
+
+#define ACCESSKEY_ID "9bd7f169bb504ceab47abcbd"
+#define ACCESSKEY_SECRET "b180714bfac149c699ca8a3bc1d7324a"
+#define APPID "10436"
+#define CLOUD_VERSION "V2"
+#define VENDORID "100042"
+
+#endif
