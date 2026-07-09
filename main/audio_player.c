@@ -210,3 +210,49 @@ esp_err_t audio_player_play_file(const char *path)
     ESP_LOGI(TAG, "Playback done: %s", path);
     return ESP_OK;
 }
+
+esp_err_t audio_player_pcm_begin(uint32_t sample_rate)
+{
+    if (!s_initialized) {
+        ESP_LOGE(TAG, "PCM begin failed: audio_player not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    i2s_set_sample_rates(I2S_NUM_0, sample_rate);
+    bsp_board_power_ctrl(POWER_MODULE_AUDIO, true);
+    bsp_codec_set_mute(false);
+    return ESP_OK;
+}
+
+esp_err_t audio_player_pcm_write(const int16_t *pcm, int samples)
+{
+    if (pcm == NULL || samples <= 0) {
+        ESP_LOGE(TAG, "PCM write failed: pcm is NULL or samples <= 0");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Stereo output: duplicate each mono sample to L/R
+    int16_t *stereo = malloc((size_t)samples * 2 * sizeof(int16_t));
+    if (stereo == NULL) {
+        ESP_LOGE(TAG, "PCM write failed: OOM stereo buffer");
+        return ESP_ERR_NO_MEM;
+    }
+
+    for (int i = 0; i < samples; i++) {
+        stereo[i * 2]     = pcm[i];
+        stereo[i * 2 + 1] = pcm[i];
+    }
+
+    size_t bytes_written;
+    i2s_write(I2S_NUM_0, stereo, (size_t)samples * 2 * sizeof(int16_t),
+              &bytes_written, portMAX_DELAY);
+
+    free(stereo);
+    return ESP_OK;
+}
+
+void audio_player_pcm_end(void)
+{
+    i2s_zero_dma_buffer(I2S_NUM_0);
+    bsp_codec_set_mute(true);
+}

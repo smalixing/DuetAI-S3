@@ -79,7 +79,7 @@ static int _ws_check_accept(const char *response)
 
 static int _ws_handshake(network_t *pNetwork, const char *host, int port, char *path, uint32_t timeout_ms)
 {
-    char buf[512];
+    char buf[1024];
     int len = snprintf(buf, sizeof(buf),
                          "GET %s HTTP/1.1\r\n"
                          "Connection: Upgrade\r\n"
@@ -120,7 +120,7 @@ static int _ws_handshake(network_t *pNetwork, const char *host, int port, char *
 
 void *hal_ws_connect(const char *url, int opt_port, const tls_param_t *tls_param, uint32_t timeout_ms)
 {
-    char host[128], path[128], scheme[8];
+    char host[128], path[512], scheme[8];
     int port;
     network_t *pNetwork;
 

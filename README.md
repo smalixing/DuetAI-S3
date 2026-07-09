@@ -4,19 +4,23 @@
 # DuetAI-S3
 
 DuetAI-S3 is an ESP32-S3 voice assistant firmware. It runs on-device wake word
-detection, plays a voice prompt on wake, drives an LVGL GUI on a round LCD, and
-ships the networking HAL (TCP/TLS/HTTP/WebSocket) used to talk to a cloud AI
-backend.
+detection, connects to Wi-Fi, streams speech to the JD JoyInside cloud over a
+WebSocket, plays back the cloud's TTS response, and drives an LVGL GUI on a round
+LCD. It ships the networking HAL (TCP/TLS/HTTP/WebSocket) used to talk to the
+cloud AI backend.
 
 The wake word is "你好东东" (`nihaodongdong`). On detection the firmware plays a
-local acknowledgement prompt and (going forward) will open a session to the
-cloud for streaming speech interaction.
+local acknowledgement prompt, opens a JoyInside voice turn, uplinks the captured
+microphone audio, and plays the streamed cloud response.
 
 ## Features
 
 - On-device wake word detection via Espressif esp-sr (WakeNet).
 - Dual-microphone audio capture through an ES7210 ADC over I2S.
-- Local WAV prompt playback through the board codec.
+- Wi-Fi station connectivity with auto-reconnect.
+- JD JoyInside cloud voice call: opus audio uplink and streaming TTS playback
+  over a WebSocket (`main/joyinside`).
+- Local WAV prompt playback and streaming PCM playback through the board codec.
 - LVGL v9.5 GUI on a GC9A01 round LCD with touch input.
 - Networking HAL: TCP, TLS (mbedTLS), HTTP, and WebSocket client
   (`components/hal_socket`).
@@ -35,7 +39,8 @@ Target board is an ESP32-S3 module with:
 ## Repository layout
 
 ```
-├── main/                     App entry, LVGL port, wake word + audio tasks
+├── main/                     App entry, Wi-Fi, wake word, audio, JoyInside client
+│   └── joyinside/            JD JoyInside cloud voice-call module
 ├── components/
 │   ├── bsp/                  Board support: LCD, codec, I2S, I2C, GPIO, ADC
 │   ├── hal_socket/           TCP/TLS/HTTP/WebSocket networking HAL
@@ -56,6 +61,19 @@ Target board is an ESP32-S3 module with:
 The `voice` and `model` SPIFFS partitions hold the WAV prompts and the packed
 esp-sr `srmodels.bin`, respectively (see [partitions.csv](partitions.csv)).
 
+## Configuration
+
+Before building, set the network and cloud credentials:
+
+- **Wi-Fi**: edit the `WIFI_SSID` and `WIFI_PSK` macros at the top of
+  [main/wifi_sta.c](main/wifi_sta.c).
+- **JoyInside cloud**: run `idf.py menuconfig` → *JoyInside Cloud Voice Call* and
+  fill in the access key id/secret, bot id, device token, and device id (or edit
+  the defaults in [main/joyinside/Kconfig.projbuild](main/joyinside/Kconfig.projbuild)).
+
+Wi-Fi and the cloud session are best-effort: if either fails to come up, local
+wake-word detection and prompt playback still work.
+
 ## Build and flash
 
 Requires ESP-IDF v5.5.x (see [dependencies.lock](dependencies.lock)).
@@ -68,29 +86,26 @@ idf.py -p PORT flash monitor
 
 ## Roadmap
 
-The current firmware covers local wake-up, display, and audio. Planned work,
-roughly in priority order:
+The current firmware covers local wake-up, display, audio, Wi-Fi, and a full
+JoyInside cloud voice turn (uplink + TTS playback). Planned work, roughly in
+priority order:
 
-1. Cloud session over WebSocket
-   - Wire the wake word callback to open a `hal_ws_connect` session to the AI
-     backend and stream captured audio upstream.
-   - Handle the new `hal_ws_read` return codes (`HAL_WS_CLOSED`,
-     `HAL_WS_CONTROL`, `HAL_WS_ERR`) and reconnect logic in the session layer.
-2. Streaming speech pipeline
-   - Continuous capture and upload after wake, plus playback of the streamed
-     response through the audio player.
-   - Barge-in / VAD to end an utterance without a fixed timeout.
-3. WebSocket protocol hardening
+1. Streaming speech refinements
+   - Barge-in / VAD to end an utterance without relying solely on the cloud's
+     `ASR_FINAL`, and to interrupt playback when the user speaks.
+   - Acoustic echo cancellation so playback does not feed back into the uplink.
+2. WebSocket protocol hardening
    - Support fragmented frames (currently a single frame per read; fragmented
      frames are logged and treated as standalone).
    - Randomize the client masking key and generate a per-connection
      `Sec-WebSocket-Key` instead of the fixed constant.
-4. GUI states
+3. GUI states
    - Assistant UI states (idle / listening / thinking / speaking) via
      PageManager_C, driven by the session layer.
-5. Provisioning and connectivity
-   - Wi-Fi provisioning flow and network status surfaced on the LCD.
-6. OTA updates
+4. Provisioning and connectivity
+   - Wi-Fi provisioning flow (replacing the compile-time SSID/PSK macros) and
+     network status surfaced on the LCD.
+5. OTA updates
    - Firmware update over the existing dual-app (`ota_0` / `ota_1`) layout.
 
 ## Conventions

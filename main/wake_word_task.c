@@ -57,6 +57,7 @@ static char *s_wake_word_name = NULL;
 
 // Callback
 static wake_word_cb_t s_wake_word_callback = NULL;
+static wake_word_pcm_cb_t s_pcm_callback = NULL;
 
 /**
  * @brief Wake word detection task
@@ -113,6 +114,13 @@ static void wake_word_detect_task(void *arg)
         // De-interleave: extract a single capture channel into the mono buffer
         for (int i = 0; i < audio_chunksize; i++) {
             mono_buffer[i] = i2s_buffer[i * WAKE_WORD_I2S_CHANNELS + WAKE_WORD_CAPTURE_CHANNEL];
+        }
+
+        // Forward the captured mono stream (e.g. for cloud uplink). Kept off the
+        // detection result so audio flows continuously; the consumer decides when
+        // to actually stream.
+        if (s_pcm_callback != NULL) {
+            s_pcm_callback(mono_buffer, audio_chunksize);
         }
 
         // Perform wake word detection on the mono stream
@@ -243,4 +251,9 @@ esp_err_t wake_word_task_stop(void)
     s_wake_word_task_handle = NULL;
 
     return ESP_OK;
+}
+
+void wake_word_task_set_pcm_callback(wake_word_pcm_cb_t cb)
+{
+    s_pcm_callback = cb;
 }
