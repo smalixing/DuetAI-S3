@@ -1,8 +1,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/event_groups.h"
+#include "esp_heap_caps.h"
 
 
 void *hal_mutex_create(const char *name)
@@ -47,8 +49,9 @@ int hal_queue_recv(void *queue, void *item, int timeout)
 
 void *hal_thread_create(const char *name, void (*thread_func)(void *), void *param, int stack_size, int prority)
 {
-    TaskHandle_t handle;
-    xTaskCreate(thread_func, name, stack_size, param, prority, &handle);
+    TaskHandle_t handle = NULL;
+    xTaskCreatePinnedToCoreWithCaps(thread_func, name, stack_size, param, prority, &handle,
+                                    tskNO_AFFINITY, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     return handle;
 }
 
@@ -59,7 +62,7 @@ void *hal_thread_self()
 
 void hal_thread_delete(void *thread)
 {
-    vTaskDelete(thread);
+    vTaskDeleteWithCaps(thread);
 }
 
 void hal_thread_sleep(uint32_t ms)
