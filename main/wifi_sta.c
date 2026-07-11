@@ -5,6 +5,7 @@
  */
 
 #include <string.h>
+#include <time.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -14,6 +15,8 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
+#include "esp_sntp.h"
 #include "nvs_flash.h"
 
 #include "wifi_sta.h"
@@ -26,6 +29,12 @@ static const char *TAG = "wifi_sta";
 
 // How long wifi_sta_start() waits for an IP before giving up
 #define WIFI_GOT_IP_TIMEOUT_MS  (15 * 1000)
+
+// NTP server and how long wifi_sta_sync_time() waits for the clock to be set
+#define SNTP_SERVER             "pool.ntp.org"
+#define SNTP_SYNC_TIMEOUT_MS    (15 * 1000)
+// A synced clock must be at least this (year 2022) to be considered valid
+#define SNTP_MIN_VALID_EPOCH    (1640995200)
 
 // Event group bits set from the WiFi/IP event handler
 #define WIFI_CONNECTED_BIT      (0x01 << 0)
@@ -102,5 +111,45 @@ esp_err_t wifi_sta_start(void)
     }
 
     ESP_LOGI(TAG, "Start 'wifi_sta': connected");
+    return ESP_OK;
+}
+
+esp_err_t wifi_sta_sync_time(void)
+{
+    // Skip if the clock already looks valid (e.g. RTC survived a warm reboot)
+    time_t now = 0;
+    time(&now);
+    if (now >= SNTP_MIN_VALID_EPOCH) {
+        ESP_LOGI(TAG, "Sync time: clock already set (%lld)", (long long)now);
+        return ESP_OK;
+    }
+
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG(SNTP_SERVER);
+    esp_err_t ret = esp_netif_sntp_init(&config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Sync time failed: sntp init %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(SNTP_SYNC_TIMEOUT_MS));
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Sync time failed: no response within %d ms", SNTP_SYNC_TIMEOUT_MS);
+        esp_netif_sntp_deinit();
+        return ESP_ERR_TIMEOUT;
+    }
+
+    time(&now);
+    esp_netif_sntp_deinit();
+
+    if (now < SNTP_MIN_VALID_EPOCH) {
+        ESP_LOGE(TAG, "Sync time failed: clock still invalid (%lld)", (long long)now);
+        return ESP_ERR_TIMEOUT;
+    }
+
+    struct tm tm_info;
+    gmtime_r(&now, &tm_info);
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_info);
+    ESP_LOGI(TAG, "Sync time: system time set to %s UTC", buf);
     return ESP_OK;
 }

@@ -27,6 +27,20 @@ extern "C" {
  */
 esp_err_t wifi_sta_start(void);
 
+/**
+ * @brief  Synchronize system time via SNTP.
+ *
+ *         Must be called after the WiFi station has an IP address. Blocks until
+ *         the system clock is set from an NTP server or the attempt times out.
+ *         A correct wall-clock time is required for cloud auth signatures that
+ *         embed a millisecond timestamp.
+ *
+ * @return
+ *       - ESP_OK             System time synchronized
+ *       - ESP_ERR_TIMEOUT    Time not synchronized before the timeout
+ */
+esp_err_t wifi_sta_sync_time(void);
+
 #ifdef __cplusplus
 }
 #endif
