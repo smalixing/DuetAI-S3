@@ -47,6 +47,14 @@ int joyinside_protocol_build_chat_update(char *buf, int buf_len, const char *mid
 int joyinside_protocol_build_interrupt(char *buf, int buf_len, const char *mid);
 
 /**
+ * @brief  Build a CLIENT_AUDIO_FINISH event JSON
+ *
+ *         Signals to the server that the client has finished sending uplink
+ *         audio for the current turn, so it can run recognition and respond.
+ */
+int joyinside_protocol_build_audio_finish(char *buf, int buf_len, const char *mid);
+
+/**
  * @brief  Build a CLIENT_INPUT_TEXT_TO_SPEECH event JSON
  */
 int joyinside_protocol_build_tts(char *buf, int buf_len, const char *mid, const char *text);

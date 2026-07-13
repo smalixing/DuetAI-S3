@@ -174,6 +174,19 @@ joyinside_err_t joyinside_chat_update(joyinside_handle_t handle);
 joyinside_err_t joyinside_send_audio(joyinside_handle_t handle, const int16_t *pcm, int samples);
 
 /**
+ * @brief  Tell the server that uplink audio for this turn is complete
+ *
+ * @note   Send this once the user has stopped speaking so the server runs
+ *         recognition and produces a response. Without it the server may keep
+ *         waiting for more audio and never reply.
+ *
+ * @param[in]  handle  Handle from joyinside_create()
+ *
+ * @return  JOYINSIDE_ERR_OK on success, error code otherwise
+ */
+joyinside_err_t joyinside_audio_finish(joyinside_handle_t handle);
+
+/**
  * @brief  Ask the server to interrupt the current response
  *
  * @param[in]  handle  Handle from joyinside_create()

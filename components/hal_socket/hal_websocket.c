@@ -110,7 +110,14 @@ static int _ws_handshake(network_t *pNetwork, const char *host, int port, char *
         hal_log_debug("handshake recv(%d):\n%s", len, buf);
     } while (NULL == strstr(buf, "\r\n\r\n") && len < sizeof(buf) - 1);
 
+    /* full header not received before buffer/connection ended */
+    if (NULL == strstr(buf, "\r\n\r\n")) {
+        hal_log_err("handshake incomplete header, len(%d):\n%s", len, buf);
+        return -1;
+    }
+
     if (_ws_check_accept(buf) != 0) {
+        hal_log_err("handshake rejected, response(%d):\n%s", len, buf);
         return -1;
     }
 

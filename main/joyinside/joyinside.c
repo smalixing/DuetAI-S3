@@ -10,6 +10,9 @@
 
 #include "sdkconfig.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include "mbedtls/base64.h"
 
 #include "cJSON.h"
@@ -31,9 +34,19 @@
 #define WS_WRITE_TIMEOUT_MS     (6 * 1000)
 /* Upper bound for disconnect to wait for the RX/TX tasks to exit (> read timeout). */
 #define TASK_EXIT_WAIT_MS       (WS_READ_TIMEOUT_MS + 3000)
+/* Keepalive: the server closes an idle connection after ~15 s with no traffic.
+ * The TX task sends a WS ping this often when there is nothing to uplink, so the
+ * link stays open between voice turns. Must be well under the server's idle
+ * window (the reference client pings every 10 s). */
+#define WS_PING_INTERVAL_MS     (5 * 1000)
 
-#define RX_TASK_STACK           (8 * 1024)
-#define TX_TASK_STACK           (6 * 1024)
+/* Task stacks come from PSRAM (see hal_thread_create). esp-opus is built with
+ * -DUSE_ALLOCA, so the encoder/decoder scratch lives on these stacks and the
+ * fixed-point SILK encoder needs a large chunk even at complexity 0. TX is
+ * sized generously for measurement; the _tx_task logs its high-water mark so
+ * this can be tuned down to the real peak. */
+#define RX_TASK_STACK           (16 * 1024)
+#define TX_TASK_STACK           (40 * 1024)
 #define RX_TASK_PRIO            (5)
 #define TX_TASK_PRIO            (5)
 
@@ -52,11 +65,17 @@
     ((field) && (field)[0] ? (field) : (kconfig_default))
 
 /**
- * @brief  One queued uplink audio frame (16-bit mono PCM, one 60 ms frame)
+ * @brief  One queued uplink item.
+ *
+ *         Normally a 16-bit mono PCM frame (samples > 0). When finish is set the
+ *         item carries no audio and marks the end of the turn's uplink; the TX
+ *         task sends CLIENT_AUDIO_FINISH after the preceding audio frames, so
+ *         the marker never overtakes queued-but-unsent audio.
  */
 typedef struct {
     int16_t pcm[JOYINSIDE_OPUS_FRAME_SAMPLES];
     int     samples;
+    bool    finish;
 } uplink_frame_t;
 
 /**
@@ -252,19 +271,46 @@ static void _tx_task(void *arg)
     }
 
     while (ji->running) {
-        uint32_t bits = hal_event_wait(ji->event, EVT_STOP | EVT_AUDIO_SEND, 0, 0, WS_READ_TIMEOUT_MS);
+        uint32_t bits = hal_event_wait(ji->event, EVT_STOP | EVT_AUDIO_SEND, 0, 0, WS_PING_INTERVAL_MS);
         if ((bits & EVT_STOP) || !ji->running) {
             break;
         }
         if (!(bits & EVT_AUDIO_SEND)) {
+            /* Idle wait timed out: keep the link alive so the server does not
+             * close it between voice turns. */
+            if (ji->connected) {
+                hal_mutex_lock(ji->ws_mux);
+                hal_ws_send_ping_frame(ji->ws, WS_WRITE_TIMEOUT_MS);
+                hal_mutex_unlock(ji->ws_mux);
+            }
             continue;
         }
 
         /* Drain queued frames while the send bit is set and we stay connected. */
         while (ji->running && ji->connected &&
                hal_queue_recv(ji->uplink_queue, frame, 0) == 0) {
+            if (frame->finish) {
+                /* End-of-turn marker: all preceding audio frames have been sent
+                 * above, so tell the server uplink is complete for this turn. */
+                char json[128];
+                int jlen = joyinside_protocol_build_audio_finish(json, sizeof(json), ji->mid);
+                if (jlen > 0) {
+                    _ws_send_text(ji, json, jlen);
+                }
+                continue;
+            }
             int len = joyinside_opus_encode(ji->codec, frame->pcm, frame->samples,
                                             opus_buf, OPUS_PACKET_MAX);
+            // Report the lowest free-stack seen after the (stack-hungry, alloca-
+            // based) encoder. Divide TX_TASK_STACK minus this to get the real
+            // peak so the stack can be tuned to it.
+            static UBaseType_t min_free = (UBaseType_t)-1;
+            UBaseType_t free_words = uxTaskGetStackHighWaterMark(NULL);
+            if (free_words < min_free) {
+                min_free = free_words;
+                hal_log_info("TX stack high-water: %u bytes free (min so far)",
+                             (unsigned)(free_words * sizeof(StackType_t)));
+            }
             if (len <= 0) {
                 continue;
             }
@@ -490,9 +536,33 @@ joyinside_err_t joyinside_send_audio(joyinside_handle_t handle, const int16_t *p
     uplink_frame_t frame;
     memcpy(frame.pcm, pcm, samples * sizeof(int16_t));
     frame.samples = samples;
+    frame.finish = false;
 
     if (hal_queue_send(handle->uplink_queue, &frame, 0) != 0) {
         hal_log_warn("Send audio: uplink queue full, frame dropped");
+        return JOYINSIDE_ERR_FAIL;
+    }
+    hal_event_set(handle->event, EVT_AUDIO_SEND);
+    return JOYINSIDE_ERR_OK;
+}
+
+joyinside_err_t joyinside_audio_finish(joyinside_handle_t handle)
+{
+    if (handle == NULL) {
+        return JOYINSIDE_ERR_NOT_INIT;
+    }
+    if (!handle->connected) {
+        return JOYINSIDE_ERR_FAIL;
+    }
+
+    /* Enqueue an end-of-turn marker so the TX task sends CLIENT_AUDIO_FINISH
+     * only after every queued audio frame, preserving order. */
+    uplink_frame_t frame = {0};
+    frame.samples = 0;
+    frame.finish = true;
+
+    if (hal_queue_send(handle->uplink_queue, &frame, 0) != 0) {
+        hal_log_warn("Audio finish: uplink queue full, marker dropped");
         return JOYINSIDE_ERR_FAIL;
     }
     hal_event_set(handle->event, EVT_AUDIO_SEND);

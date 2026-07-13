@@ -43,9 +43,11 @@ static joyinside_handle_t s_joyinside = NULL;
 static volatile bool s_streaming = false;
 
 // True once TTS PCM playback has been started for the current response, so the
-// codec is powered/unmuted lazily on the first decoded frame. Touched only from
-// the JoyInside RX task (pcm_cb / event_cb run on the same thread).
-static bool s_playing = false;
+// codec is powered/unmuted lazily on the first decoded frame. Set by the RX
+// task (pcm_cb) and cleared by the RX task (event_cb) or the wake word task on
+// barge-in, so it is volatile. audio_player serializes the actual hardware, so
+// a torn read here at worst causes one harmless extra begin/end.
+static volatile bool s_playing = false;
 
 // Uplink accumulation buffer: the wake word task delivers audio in wakenet-sized
 // chunks (typically 512 samples), but JoyInside expects exactly one 960-sample
@@ -70,6 +72,12 @@ static void uplink_pcm_callback(const int16_t *pcm, int samples)
         if (s_up_len == JOYINSIDE_OPUS_FRAME_SAMPLES) {
             joyinside_send_audio(s_joyinside, s_up_buf, s_up_len);
             s_up_len = 0;
+            // Heartbeat every ~50 frames (3 s at 60 ms/frame) to confirm uplink
+            // is actually flowing without flooding the log per frame.
+            static uint32_t sent;
+            if (++sent % 50 == 1) {
+                hal_log_info("Uplink: sent %" PRIu32 " frames to cloud", sent);
+            }
         }
     }
 }
@@ -140,18 +148,49 @@ static void joyinside_text_callback(bool is_asr, const char *text, void *user_ct
 static void wake_word_detected_callback(int wake_word_index, const char *wake_word_name)
 {
     hal_log_info("Wake word detected: %s (index: %d)", wake_word_name, wake_word_index);
+
+    // Barge-in: if a previous response is still playing, cut it off before the
+    // prompt. Stop the local stream first (so no more TTS frames reach the
+    // codec) and ask the server to abandon the current turn. Without this the
+    // old response and the new turn would fight over the codec.
+    if (s_joyinside != NULL && joyinside_is_connected(s_joyinside)) {
+        s_streaming = false;
+        if (s_playing) {
+            joyinside_interrupt(s_joyinside);
+            audio_player_pcm_end();
+            s_playing = false;
+        }
+    }
+
     // Play the wake acknowledgement prompt. Runs on the wake word task, so
     // detection is naturally paused while the prompt plays (no self-trigger).
     audio_player_play_file(WAKE_PROMPT_WAV);
+
+    // Reconnect if the session dropped since the last turn (e.g. server idle
+    // close, or a network blip). The RX task has already exited on close, so a
+    // fresh connect here is safe and cannot deadlock against its teardown.
+    if (s_joyinside != NULL && !joyinside_is_connected(s_joyinside)) {
+        hal_log_info("Wake: session dropped, reconnecting");
+        if (joyinside_connect(s_joyinside) != JOYINSIDE_ERR_OK) {
+            hal_log_warn("Wake: reconnect failed, no uplink this turn");
+        }
+    }
 
     // Open a voice turn: start uplink so the following speech reaches the cloud.
     if (s_joyinside != NULL && joyinside_is_connected(s_joyinside)) {
         s_up_len = 0;
         if (joyinside_chat_update(s_joyinside) == JOYINSIDE_ERR_OK) {
             s_streaming = true;
+            hal_log_info("Wake: uplink started for this turn");
         } else {
             hal_log_warn("Wake: chat_update failed, no uplink this turn");
         }
+    } else {
+        // No cloud session: uplink can never happen. Make the reason explicit
+        // so the logs distinguish "session down" from "session up but silent".
+        hal_log_warn("Wake: no cloud session (handle=%p, connected=%d), skipping uplink",
+                     (void *)s_joyinside,
+                     s_joyinside ? joyinside_is_connected(s_joyinside) : 0);
     }
 }
 
@@ -234,7 +273,14 @@ void app_main(void)
         hal_log_err("WiFi start failed: %s", esp_err_to_name(ret));
         // Continue; local wake word detection works without the cloud
     } else {
-        joyinside_session_start();
+        /* Cloud auth signs a millisecond wall-clock timestamp, so the system
+         * time must be synced before connecting or the server returns 401. */
+        ret = wifi_sta_sync_time();
+        if (ESP_OK != ret) {
+            hal_log_err("Time sync failed: %s; skipping cloud session", esp_err_to_name(ret));
+        } else {
+            joyinside_session_start();
+        }
     }
 
     /* Start wake word detection */

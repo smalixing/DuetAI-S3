@@ -13,6 +13,13 @@
 #include "joyinside_opus.h"
 
 #define OPUS_ENCODER_BITRATE    (24000)
+// esp-opus is built with -DUSE_ALLOCA, so the encoder's internal scratch
+// buffers live on the caller task's stack. At the default complexity (9) the
+// SILK analysis allocates so much that even a 24 KB task stack overflows on the
+// first opus_encode(). Complexity directly scales that stack usage; 0 is the
+// lightest setting and is the norm for VOIP on ESP32. Keep it low unless the
+// TX task stack is grown to match a higher setting.
+#define OPUS_ENCODER_COMPLEXITY (0)
 
 struct joyinside_opus {
     OpusEncoder *encoder;
@@ -36,6 +43,9 @@ joyinside_opus_handle_t joyinside_opus_create(void)
     }
     opus_encoder_ctl(codec->encoder, OPUS_SET_BITRATE(OPUS_ENCODER_BITRATE));
     opus_encoder_ctl(codec->encoder, OPUS_SET_VBR(0));
+    // Cap on-stack scratch (see OPUS_ENCODER_COMPLEXITY) and hint voice content.
+    opus_encoder_ctl(codec->encoder, OPUS_SET_COMPLEXITY(OPUS_ENCODER_COMPLEXITY));
+    opus_encoder_ctl(codec->encoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
 
     codec->decoder = opus_decoder_create(JOYINSIDE_OPUS_SAMPLE_RATE, JOYINSIDE_OPUS_CHANNELS, &err);
     if (codec->decoder == NULL || err != OPUS_OK) {

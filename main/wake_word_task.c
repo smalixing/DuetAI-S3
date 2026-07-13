@@ -9,8 +9,10 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 #include "driver/i2s.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 
 #include "wake_word_task.h"
 #include "esp_wn_iface.h"
@@ -89,7 +91,7 @@ static void wake_word_detect_task(void *arg)
         free(i2s_buffer);
         free(mono_buffer);
         s_task_running = false;
-        vTaskDelete(NULL);
+        vTaskDeleteWithCaps(NULL);
         return;
     }
 
@@ -147,7 +149,7 @@ static void wake_word_detect_task(void *arg)
     free(i2s_buffer);
     free(mono_buffer);
     ESP_LOGI(TAG, "Wake word detection stopped");
-    vTaskDelete(NULL);
+    vTaskDeleteWithCaps(NULL);
 }
 
 esp_err_t wake_word_task_start(wake_word_cb_t callback)
@@ -200,14 +202,18 @@ esp_err_t wake_word_task_start(wake_word_cb_t callback)
 
     // Start detection task
     s_task_running = true;
-    BaseType_t ret = xTaskCreatePinnedToCore(
+    // Allocate the task stack from PSRAM (MALLOC_CAP_SPIRAM) to avoid exhausting
+    // internal RAM, which is already heavily used by the WiFi/TLS stack and the
+    // JoyInside cloud session. Must be paired with vTaskDeleteWithCaps().
+    BaseType_t ret = xTaskCreatePinnedToCoreWithCaps(
         wake_word_detect_task,
         "wake_word",
         WAKE_WORD_TASK_STACK_SIZE,
         NULL,
         WAKE_WORD_TASK_PRIORITY,
         &s_wake_word_task_handle,
-        WAKE_WORD_TASK_CORE_ID
+        WAKE_WORD_TASK_CORE_ID,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
     );
 
     if (ret != pdPASS) {

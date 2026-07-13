@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_spiffs.h"
 #include "driver/i2s.h"
@@ -23,7 +25,23 @@ static const char *TAG = "audio_player";
 // Samples read from file per iteration (mono). Stereo output is 2x this.
 #define PCM_CHUNK_SAMPLES       (512)
 
+// Default codec/I2S sample rate to restore after playing a prompt WAV. I2S_NUM_0
+// is shared full-duplex with the wake word task's mic capture, which (like the
+// TTS stream) runs at 16 kHz; a prompt at a different rate must not leave the
+// bus mis-clocked for capture.
+#define AUDIO_DEFAULT_SAMPLE_RATE (16000)
+
 static bool s_initialized = false;
+
+// Serializes the codec/I2S hardware between the WAV prompt player (wake word
+// task) and the streaming TTS path (JoyInside RX task). Without it the two
+// tasks interleave i2s_write() frames and race on mute/rate/power, corrupting
+// audio when a wake prompt fires while a cloud response is still playing.
+static SemaphoreHandle_t s_lock = NULL;
+// True between pcm_begin() and pcm_end(); guarded by s_lock. Makes the stream
+// lifecycle idempotent so barge-in (wake task) and the normal end-of-response
+// path (RX task) can both tear playback down without double-muting.
+static bool s_stream_active = false;
 
 // Minimal RIFF/WAVE header fields we care about
 typedef struct {
@@ -107,6 +125,14 @@ esp_err_t audio_player_init(void)
         return ESP_OK;
     }
 
+    if (s_lock == NULL) {
+        s_lock = xSemaphoreCreateMutex();
+        if (s_lock == NULL) {
+            ESP_LOGE(TAG, "Failed to create audio_player lock");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
     esp_vfs_spiffs_conf_t conf = {
         .base_path = VOICE_BASE_PATH,
         .partition_label = VOICE_PARTITION_LABEL,
@@ -136,15 +162,20 @@ esp_err_t audio_player_play_file(const char *path)
         return ESP_ERR_INVALID_STATE;
     }
 
+    // Hold the hardware for the whole prompt so no TTS stream frame interleaves.
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+
     FILE *fp = fopen(path, "rb");
     if (fp == NULL) {
         ESP_LOGE(TAG, "Cannot open %s", path);
+        xSemaphoreGive(s_lock);
         return ESP_ERR_NOT_FOUND;
     }
 
     wav_info_t info = {0};
     if (wav_parse(fp, &info) != ESP_OK) {
         fclose(fp);
+        xSemaphoreGive(s_lock);
         return ESP_FAIL;
     }
 
@@ -155,6 +186,7 @@ esp_err_t audio_player_play_file(const char *path)
     if (info.audio_format != 1 || info.bits_per_sample != 16 || info.num_channels != 1) {
         ESP_LOGE(TAG, "Unsupported WAV format (need PCM 16-bit mono)");
         fclose(fp);
+        xSemaphoreGive(s_lock);
         return ESP_ERR_NOT_SUPPORTED;
     }
 
@@ -173,6 +205,7 @@ esp_err_t audio_player_play_file(const char *path)
         free(mono);
         free(stereo);
         fclose(fp);
+        xSemaphoreGive(s_lock);
         return ESP_ERR_NO_MEM;
     }
 
@@ -202,10 +235,15 @@ esp_err_t audio_player_play_file(const char *path)
     // Flush and mute to avoid idle hiss
     i2s_zero_dma_buffer(I2S_NUM_0);
     bsp_codec_set_mute(true);
+    // Restore the streaming sample rate so a WAV prompt at a different rate
+    // does not leave the codec mis-clocked for the mic capture / TTS path.
+    i2s_set_sample_rates(I2S_NUM_0, AUDIO_DEFAULT_SAMPLE_RATE);
 
     free(mono);
     free(stereo);
     fclose(fp);
+
+    xSemaphoreGive(s_lock);
 
     ESP_LOGI(TAG, "Playback done: %s", path);
     return ESP_OK;
@@ -218,9 +256,12 @@ esp_err_t audio_player_pcm_begin(uint32_t sample_rate)
         return ESP_ERR_INVALID_STATE;
     }
 
+    xSemaphoreTake(s_lock, portMAX_DELAY);
     i2s_set_sample_rates(I2S_NUM_0, sample_rate);
     bsp_board_power_ctrl(POWER_MODULE_AUDIO, true);
     bsp_codec_set_mute(false);
+    s_stream_active = true;
+    xSemaphoreGive(s_lock);
     return ESP_OK;
 }
 
@@ -243,16 +284,32 @@ esp_err_t audio_player_pcm_write(const int16_t *pcm, int samples)
         stereo[i * 2 + 1] = pcm[i];
     }
 
-    size_t bytes_written;
-    i2s_write(I2S_NUM_0, stereo, (size_t)samples * 2 * sizeof(int16_t),
-              &bytes_written, portMAX_DELAY);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    // Drop the frame if the stream was torn down (barge-in / end-of-response)
+    // while it was queued. This is what stops stale TTS after an interrupt.
+    esp_err_t ret = ESP_OK;
+    if (s_stream_active) {
+        size_t bytes_written;
+        i2s_write(I2S_NUM_0, stereo, (size_t)samples * 2 * sizeof(int16_t),
+                  &bytes_written, portMAX_DELAY);
+    } else {
+        ret = ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreGive(s_lock);
 
     free(stereo);
-    return ESP_OK;
+    return ret;
 }
 
 void audio_player_pcm_end(void)
 {
-    i2s_zero_dma_buffer(I2S_NUM_0);
-    bsp_codec_set_mute(true);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    // Idempotent: both the RX task (normal end) and the wake task (barge-in)
+    // may call this; only the first tears the hardware down.
+    if (s_stream_active) {
+        i2s_zero_dma_buffer(I2S_NUM_0);
+        bsp_codec_set_mute(true);
+        s_stream_active = false;
+    }
+    xSemaphoreGive(s_lock);
 }

@@ -186,7 +186,8 @@ int joyinside_protocol_build_chat_update(char *buf, int buf_len, const char *mid
                     "\"audio\":{"
                         "\"binary\": true,"
                         "\"output\":{\"codec\":\"opus\",\"frameSizeMs\":\"60\",\"sampleRate\":\"16000\",\"enableOpusCbr\":true},"
-                        "\"input\":{\"codec\":\"opus\",\"sampleRate\":\"16000\"}"
+                        "\"input\":{\"codec\":\"opus\",\"sampleRate\":\"16000\"},"
+                        "\"timbre\":{\"voiceVolume\":\"50\"}"
                     "},"
                     "\"features\":{"
                         "\"mcp\":{"
@@ -214,6 +215,18 @@ int joyinside_protocol_build_interrupt(char *buf, int buf_len, const char *mid)
         "\"content\":{\"eventType\":\"CLIENT_INTERRUPT\"}}", mid);
     if (n <= 0 || n >= buf_len) {
         hal_log_err("Build interrupt failed: buffer too small");
+        return -1;
+    }
+    return n;
+}
+
+int joyinside_protocol_build_audio_finish(char *buf, int buf_len, const char *mid)
+{
+    int n = snprintf(buf, buf_len,
+        "{\"mid\":\"%s\",\"contentType\":\"EVENT\","
+        "\"content\":{\"eventType\":\"CLIENT_AUDIO_FINISH\"}}", mid);
+    if (n <= 0 || n >= buf_len) {
+        hal_log_err("Build audio-finish failed: buffer too small");
         return -1;
     }
     return n;
