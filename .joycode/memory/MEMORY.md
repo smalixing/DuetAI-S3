@@ -1,0 +1,1 @@
+- [JoyInside 云连接鉴权与时间同步](project_joyinside_cloud.md) — DuetAI-S3 设备连接 JoyInside 云 (wss://joyinside.jd.com) 的鉴权机制与 SNTP 时间同步依赖
