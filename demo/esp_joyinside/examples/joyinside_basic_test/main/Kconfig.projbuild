@@ -1,0 +1,82 @@
+menu "JoyInside Basic Test Example"
+
+    config JOYINSIDE_TEST_RUN_BOOTSTRAP_DID
+        bool "Run device ID generation test"
+        default y
+
+    config JOYINSIDE_TEST_RUN_BOOTSTRAP_REGISTER
+        bool "Run HTTP bootstrap register test"
+        default y
+        depends on JOYINSIDE_TEST_ENABLE_NETWORK
+
+    config JOYINSIDE_TEST_RUN_CHAT_CONNECT
+        bool "Run WebSocket connect and init test"
+        default y
+        depends on JOYINSIDE_TEST_ENABLE_NETWORK
+
+    config JOYINSIDE_TEST_ENABLE_NETWORK
+        bool "Enable Wi-Fi and network-dependent tests"
+        default y
+
+    config JOYINSIDE_TEST_CHAT_DURATION_SEC
+        int "Keep chat session open for N seconds after uplink audio"
+        range 1 120
+        default 30
+        depends on JOYINSIDE_TEST_RUN_CHAT_CONNECT
+
+    config JOYINSIDE_TEST_SEND_SILENCE
+        bool "Send silence PCM frames during chat test"
+        default n
+        depends on JOYINSIDE_TEST_RUN_CHAT_CONNECT
+
+    config JOYINSIDE_TEST_SEND_SPIFFS_PCM
+        bool "Send SPIFFS PCM clip during chat test"
+        default y
+        depends on JOYINSIDE_TEST_RUN_CHAT_CONNECT
+
+    config JOYINSIDE_TEST_SPIFFS_PCM_PATH
+        string "SPIFFS PCM file path"
+        default "/spiffs/story.pcm"
+        depends on JOYINSIDE_TEST_SEND_SPIFFS_PCM
+
+    config JOYINSIDE_TEST_PCM_FRAME_BYTES
+        int "PCM uplink frame size in bytes"
+        range 320 4096
+        default 640
+        depends on JOYINSIDE_TEST_RUN_CHAT_CONNECT
+
+    config JOYINSIDE_TEST_PCM_FRAME_INTERVAL_MS
+        int "Delay between PCM frames in milliseconds"
+        range 0 200
+        default 20
+        depends on JOYINSIDE_TEST_RUN_CHAT_CONNECT
+
+    config JOYINSIDE_ACCESS_KEY_ID
+        string "JoyInside access key ID"
+        default "********"
+
+    config JOYINSIDE_ACCESS_KEY_SECRET
+        string "JoyInside access key secret"
+        default "*******"
+
+    config JOYINSIDE_VENDOR_ID
+        string "JoyInside vendor ID"
+        default "100506"
+
+    config JOYINSIDE_APP_ID
+        string "JoyInside application ID"
+        default "11112"
+
+    config JOYINSIDE_DEVICE_MODEL
+        string "JoyInside device model"
+        default "LiLi_Joy"
+
+    config JOYINSIDE_BOT_ID
+        string "JoyInside bot ID override"
+        default ""
+
+    config JOYINSIDE_DEVICE_TOKEN
+        string "Optional JoyInside device token"
+        default ""
+
+endmenu

@@ -1,0 +1,61 @@
+menu "ESP JoyInside Chat"
+
+config ESP_JOYINSIDE_WS_TASK_PRIO
+    int "WebSocket task priority"
+    range 1 25
+    default 5
+
+config ESP_JOYINSIDE_WS_TASK_STACK
+    int "WebSocket task stack size"
+    range 0 65536
+    default 10240
+
+config ESP_JOYINSIDE_WS_TASK_NAME
+    string "WebSocket task name override"
+    default ""
+
+config ESP_JOYINSIDE_WS_TASK_CORE_ID_SET
+    bool "Pin WebSocket task to a specific core"
+    default n
+
+config ESP_JOYINSIDE_WS_TASK_CORE_ID
+    int "WebSocket task core ID"
+    range 0 1
+    default 0
+    depends on ESP_JOYINSIDE_WS_TASK_CORE_ID_SET
+
+config ESP_JOYINSIDE_WS_BUFFER_SIZE
+    int "WebSocket buffer size"
+    range 1024 131072
+    default 16384
+
+config ESP_JOYINSIDE_WS_MAX_TEXT_FRAME_SIZE
+    int "Maximum inbound WebSocket text frame size"
+    range 1024 131072
+    default 16384
+
+config ESP_JOYINSIDE_WS_RECONNECT_TIMEOUT_MS
+    int "WebSocket reconnect timeout (ms)"
+    range 0 60000
+    default 0
+
+config ESP_JOYINSIDE_WS_NETWORK_TIMEOUT_MS
+    int "WebSocket network timeout (ms)"
+    range 1000 120000
+    default 5000
+
+config ESP_JOYINSIDE_WS_CONNECT_TIMEOUT_MS
+    int "Wait for WebSocket connected timeout (ms)"
+    range 1000 120000
+    default 30000
+
+config ESP_JOYINSIDE_WS_AUDIO_SEND_TIMEOUT_MS
+    int "Audio uplink send timeout (ms)"
+    range 1000 120000
+    default 6000
+
+config ESP_JOYINSIDE_DEBUG_TRACE_DATA
+    bool "Trace JoyInside TX/RX JSON"
+    default n
+
+endmenu
