@@ -7,6 +7,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "esp_err.h"
 
@@ -67,6 +68,17 @@ esp_err_t wake_word_task_stop(void);
  * @param cb Callback to receive PCM, or NULL to disable forwarding
  */
 void wake_word_task_set_pcm_callback(wake_word_pcm_cb_t cb);
+
+/**
+ * @brief Pause or resume microphone capture.
+ *
+ * While paused, the detection loop keeps running but skips i2s_read and wake
+ * word detection, so it does not contend with the playback path for the shared
+ * full-duplex I2S peripheral. Use during TTS playback.
+ *
+ * @param paused true to pause capture, false to resume
+ */
+void wake_word_task_set_paused(bool paused);
 
 #ifdef __cplusplus
 }

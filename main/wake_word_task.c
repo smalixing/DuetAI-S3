@@ -50,6 +50,9 @@ static const char *TAG = "wake_word";
 // Task handle
 static TaskHandle_t s_wake_word_task_handle = NULL;
 static volatile bool s_task_running = false;
+// When set, the detect loop keeps running but skips i2s_read + detection, so it
+// stops competing with TTS playback for the shared full-duplex I2S peripheral.
+static volatile bool s_paused = false;
 
 // Wake word model data
 static srmodel_list_t *s_models = NULL;
@@ -99,6 +102,13 @@ static void wake_word_detect_task(void *arg)
     wakenet_state_t detect_result;
 
     while (s_task_running) {
+        // Skip capture while paused (e.g. during TTS playback) so we do not
+        // contend with the playback path on the shared full-duplex I2S bus.
+        if (s_paused) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+
         // Read one interleaved audio frame from I2S
         esp_err_t ret = i2s_read(I2S_NUM_0, i2s_buffer,
                                   read_size,
@@ -262,4 +272,9 @@ esp_err_t wake_word_task_stop(void)
 void wake_word_task_set_pcm_callback(wake_word_pcm_cb_t cb)
 {
     s_pcm_callback = cb;
+}
+
+void wake_word_task_set_paused(bool paused)
+{
+    s_paused = paused;
 }

@@ -72,12 +72,6 @@ static void uplink_pcm_callback(const int16_t *pcm, int samples)
         if (s_up_len == JOYINSIDE_OPUS_FRAME_SAMPLES) {
             joyinside_send_audio(s_joyinside, s_up_buf, s_up_len);
             s_up_len = 0;
-            // Heartbeat every ~50 frames (3 s at 60 ms/frame) to confirm uplink
-            // is actually flowing without flooding the log per frame.
-            static uint32_t sent;
-            if (++sent % 50 == 1) {
-                hal_log_info("Uplink: sent %" PRIu32 " frames to cloud", sent);
-            }
         }
     }
 }
@@ -91,6 +85,9 @@ static void joyinside_pcm_callback(const int16_t *pcm, int samples, void *user_c
 {
     (void)user_ctx;
     if (!s_playing) {
+        // Pause mic capture so the wake word task stops reading the shared
+        // full-duplex I2S bus while we drive TTS playback on it.
+        wake_word_task_set_paused(true);
         audio_player_pcm_begin(JI_SAMPLE_RATE);
         s_playing = true;
     }
@@ -107,18 +104,30 @@ static void joyinside_event_callback(joyinside_event_t event, void *user_ctx)
     (void)user_ctx;
     switch (event) {
         case JOYINSIDE_EVENT_ASR_FINAL:
-            // Server has the full utterance; stop uplink for this turn.
+            // Server has the full utterance (server-side VAD detected end of
+            // speech). This is the normal signal that stops uplink for the turn.
             s_streaming = false;
             break;
         case JOYINSIDE_EVENT_INTERRUPTED:
         case JOYINSIDE_EVENT_TTS_COMPLETE:
+            // A single response ended (or was cut short). Tear down playback
+            // only. Must NOT stop uplink: these can arrive for the *previous*
+            // response while the user is already speaking the next turn; cutting
+            // mic capture here would truncate that utterance before ASR_FINAL.
+            if (s_playing) {
+                audio_player_pcm_end();
+                s_playing = false;
+                wake_word_task_set_paused(false);  // resume mic capture
+            }
+            break;
         case JOYINSIDE_EVENT_CHAT_EXIT:
-            // Response finished (or was cut short); tear down playback and
-            // return to the idle/wait-for-wake state.
+            // The whole voice-chat session ended. Stop uplink (safety net in
+            // case ASR_FINAL never came) and tear down playback.
             s_streaming = false;
             if (s_playing) {
                 audio_player_pcm_end();
                 s_playing = false;
+                wake_word_task_set_paused(false);  // resume mic capture
             }
             break;
         default:
@@ -159,6 +168,7 @@ static void wake_word_detected_callback(int wake_word_index, const char *wake_wo
             joyinside_interrupt(s_joyinside);
             audio_player_pcm_end();
             s_playing = false;
+            wake_word_task_set_paused(false);  // undo the pause taken at playback start
         }
     }
 
@@ -181,16 +191,11 @@ static void wake_word_detected_callback(int wake_word_index, const char *wake_wo
         s_up_len = 0;
         if (joyinside_chat_update(s_joyinside) == JOYINSIDE_ERR_OK) {
             s_streaming = true;
-            hal_log_info("Wake: uplink started for this turn");
         } else {
             hal_log_warn("Wake: chat_update failed, no uplink this turn");
         }
     } else {
-        // No cloud session: uplink can never happen. Make the reason explicit
-        // so the logs distinguish "session down" from "session up but silent".
-        hal_log_warn("Wake: no cloud session (handle=%p, connected=%d), skipping uplink",
-                     (void *)s_joyinside,
-                     s_joyinside ? joyinside_is_connected(s_joyinside) : 0);
+        hal_log_warn("Wake: no cloud session, skipping uplink");
     }
 }
 
