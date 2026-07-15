@@ -17,6 +17,9 @@
 #include "hal/gpio_hal.h"
 #include "hal/i2s_ll.h"
 
+/* dma_buf_count is 12 (~120ms): absorbs jitter in the bursty 60ms TTS frame
+ * stream so TX DMA does not underrun mid-playback. Larger counts (e.g. 32)
+ * exhaust internal RAM (DMA cannot use PSRAM) and starve the TLS/AES allocator. */
 #define I2S_CONFIG_DEFAULT() { \
     .mode                   = I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX, \
     .sample_rate            = sample_rate, \
@@ -24,7 +27,7 @@
     .channel_format         = I2S_CHANNEL_FMT_RIGHT_LEFT, \
     .communication_format   = I2S_COMM_FORMAT_STAND_I2S, \
     .intr_alloc_flags       = ESP_INTR_FLAG_LEVEL1, \
-    .dma_buf_count          = 6, \
+    .dma_buf_count          = 12, \
     .dma_buf_len            = 160, \
     .use_apll               = false, \
     .tx_desc_auto_clear     = true, \

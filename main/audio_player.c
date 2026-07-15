@@ -260,6 +260,9 @@ esp_err_t audio_player_pcm_begin(uint32_t sample_rate)
     i2s_set_sample_rates(I2S_NUM_0, sample_rate);
     bsp_board_power_ctrl(POWER_MODULE_AUDIO, true);
     bsp_codec_set_mute(false);
+    // The streaming path must set volume explicitly: without it the DAC stays at
+    // a near-silent register state and decoded TTS is written but inaudible.
+    bsp_codec_set_voice_volume(80);
     s_stream_active = true;
     xSemaphoreGive(s_lock);
     return ESP_OK;
