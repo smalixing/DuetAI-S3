@@ -42,11 +42,11 @@
 
 /* Task stacks come from PSRAM (see hal_thread_create). esp-opus is built with
  * -DUSE_ALLOCA, so the encoder/decoder scratch lives on these stacks and the
- * fixed-point SILK encoder needs a large chunk even at complexity 0. TX is
- * sized generously for measurement; the _tx_task logs its high-water mark so
- * this can be tuned down to the real peak. */
+ * fixed-point SILK encoder needs a large chunk even at complexity 0. Measured
+ * TX peak use is ~24 KB (opus_encode); 32 KB leaves headroom. RX runs the
+ * lighter opus_decode. */
 #define RX_TASK_STACK           (16 * 1024)
-#define TX_TASK_STACK           (40 * 1024)
+#define TX_TASK_STACK           (32 * 1024)
 #define RX_TASK_PRIO            (5)
 #define TX_TASK_PRIO            (5)
 
@@ -301,16 +301,6 @@ static void _tx_task(void *arg)
             }
             int len = joyinside_opus_encode(ji->codec, frame->pcm, frame->samples,
                                             opus_buf, OPUS_PACKET_MAX);
-            // Report the lowest free-stack seen after the (stack-hungry, alloca-
-            // based) encoder. Divide TX_TASK_STACK minus this to get the real
-            // peak so the stack can be tuned to it.
-            static UBaseType_t min_free = (UBaseType_t)-1;
-            UBaseType_t free_words = uxTaskGetStackHighWaterMark(NULL);
-            if (free_words < min_free) {
-                min_free = free_words;
-                hal_log_info("TX stack high-water: %u bytes free (min so far)",
-                             (unsigned)(free_words * sizeof(StackType_t)));
-            }
             if (len <= 0) {
                 continue;
             }
