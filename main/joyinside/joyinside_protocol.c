@@ -82,12 +82,21 @@ static void _ev_chat_exit(joyinside_handle_t handle, cJSON *event_data)
     ji_emit_event(handle, JOYINSIDE_EVENT_CHAT_EXIT);
 }
 
+/* CALL_INTENT_END marks the end of one intent/response, NOT the whole voice
+ * session. Treat it like TTS_COMPLETE (tear down playback only) so it never
+ * stops mic uplink; only VOICE_CHAT_EXIT ends the session. */
+static void _ev_call_intent_end(joyinside_handle_t handle, cJSON *event_data)
+{
+    (void)event_data;
+    ji_emit_event(handle, JOYINSIDE_EVENT_TTS_COMPLETE);
+}
+
 static const event_entry_t EVENT_TABLE[] = {
     {ET_TTS_SENTENCE_START, _ev_tts_sentence_start},
     {ET_TTS_COMPLETE,       _ev_tts_complete},
     {ET_INTERRUPTED,        _ev_interrupted},
     {ET_VOICE_CHAT_EXIT,    _ev_chat_exit},
-    {ET_CALL_INTENT_END,    _ev_chat_exit},
+    {ET_CALL_INTENT_END,    _ev_call_intent_end},
 };
 
 /* ---------------- contentType handlers ---------------- */
@@ -186,8 +195,7 @@ int joyinside_protocol_build_chat_update(char *buf, int buf_len, const char *mid
                     "\"audio\":{"
                         "\"binary\": true,"
                         "\"output\":{\"codec\":\"opus\",\"frameSizeMs\":\"60\",\"sampleRate\":\"16000\",\"enableOpusCbr\":true},"
-                        "\"input\":{\"codec\":\"opus\",\"sampleRate\":\"16000\"},"
-                        "\"timbre\":{\"voiceVolume\":\"50\"}"
+                        "\"input\":{\"codec\":\"opus\",\"sampleRate\":\"16000\"}"
                     "},"
                     "\"features\":{"
                         "\"mcp\":{"
