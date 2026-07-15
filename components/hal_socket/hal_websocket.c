@@ -277,7 +277,7 @@ static int _ws_handle_control_frame(network_t *pNetwork, uint32_t timeout_ms, ui
     }
 
     if (opcode == WS_OPCODE_PING) {
-        int ret = _ws_write(pNetwork, WS_OPCODE_PONG | WS_FIN, 0, buf, payload_len, timeout_ms);
+        int ret = _ws_write(pNetwork, WS_OPCODE_PONG | WS_FIN, WS_MASK, buf, payload_len, timeout_ms);
         if (ret != 0) {
             hal_log_err("PONG send failed");
             return HAL_WS_ERR;
@@ -291,7 +291,7 @@ static int _ws_handle_control_frame(network_t *pNetwork, uint32_t timeout_ms, ui
             hal_log_info("Got CLOSE frame with status code=%u", code);
         }
 
-        if (_ws_write(pNetwork, WS_OPCODE_CLOSE | WS_FIN, 0, NULL,0, timeout_ms) != 0) {
+        if (_ws_write(pNetwork, WS_OPCODE_CLOSE | WS_FIN, WS_MASK, NULL, 0, timeout_ms) != 0) {
             hal_log_err("Sending CLOSE frame with 0 payload failed");
             return HAL_WS_ERR;
         }
@@ -412,7 +412,7 @@ int hal_ws_read_ex(void *ctx, uint8_t *buf, int len, int *opcode, uint32_t timeo
 
 int hal_ws_send_close_frame(void *ctx, uint32_t timeout_ms)
 {
-    int ret = _ws_write((network_t *)ctx, WS_OPCODE_CLOSE | WS_FIN, 0, NULL, 0, timeout_ms);
+    int ret = _ws_write((network_t *)ctx, WS_OPCODE_CLOSE | WS_FIN, WS_MASK, NULL, 0, timeout_ms);
     if (ret != 0) {
         hal_log_info("ws close frame send fail");
     }
@@ -421,7 +421,7 @@ int hal_ws_send_close_frame(void *ctx, uint32_t timeout_ms)
 
 int hal_ws_send_ping_frame(void *ctx, uint32_t timeout_ms)
 {
-    int ret = _ws_write((network_t *)ctx, WS_OPCODE_PING | WS_FIN, 0, NULL, 0, timeout_ms);
+    int ret = _ws_write((network_t *)ctx, WS_OPCODE_PING | WS_FIN, WS_MASK, NULL, 0, timeout_ms);
     if (ret != 0) {
         hal_log_info("ws ping frame send fail");
     }
