@@ -24,6 +24,7 @@
 #include "joyinside.h"
 #include "joyinside_opus.h"
 
+#include "version.h"
 #include "hal_log.h"
 
 static const char *TAG = "main";
@@ -234,6 +235,8 @@ static void joyinside_session_start(void)
 
 void app_main(void)
 {
+    hal_log_info("Firmware version: %s", FW_VERSION_STRING);
+
     /* Print chip information */
     esp_chip_info_t chip_info;
     uint32_t flash_size;
