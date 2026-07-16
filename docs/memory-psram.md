@@ -64,3 +64,10 @@ CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
 - 开机日志的 Memory Type Usage Summary，关注 DIRAM 的使用百分比。
 - 运行时 `esp_get_free_internal_heap_size()` 观察内部 RAM 空闲。
 - 若出现 AES/TLS 分配失败，优先怀疑内部 RAM 被大缓冲或过深 DMA 缓冲占用。
+
+## 更新日志
+
+- 运行时堆迁移：将 joyinside/wake_word/audio_player 的大缓冲改为
+  `heap_caps_malloc(MALLOC_CAP_SPIRAM)`（见上文“已迁移到 PSRAM 的缓冲”），
+  内部 RAM 运行时占用下降约 35 KB。
+
