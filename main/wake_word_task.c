@@ -83,12 +83,14 @@ static void wake_word_detect_task(void *arg)
              WAKE_WORD_I2S_CHANNELS, WAKE_WORD_CAPTURE_CHANNEL);
     ESP_LOGI(TAG, "Wake word: %s", s_wake_word_name);
 
-    // Interleaved I2S frame buffer (all capture channels)
+    // Interleaved I2S frame buffer (all capture channels). PSRAM-backed: the
+    // legacy i2s driver copies between its internal DMA descriptors and this
+    // user buffer, so it needs no DMA-capable (internal) memory.
     const size_t frame_samples = (size_t)audio_chunksize * WAKE_WORD_I2S_CHANNELS;
     const size_t read_size = frame_samples * sizeof(int16_t);
-    int16_t *i2s_buffer = malloc(read_size);
+    int16_t *i2s_buffer = heap_caps_malloc(read_size, MALLOC_CAP_SPIRAM);
     // Mono buffer fed to the wakenet model
-    int16_t *mono_buffer = malloc(audio_chunksize * sizeof(int16_t));
+    int16_t *mono_buffer = heap_caps_malloc(audio_chunksize * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     if (i2s_buffer == NULL || mono_buffer == NULL) {
         ESP_LOGE(TAG, "Failed to allocate audio buffers");
         free(i2s_buffer);

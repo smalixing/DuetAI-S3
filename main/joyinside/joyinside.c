@@ -13,6 +13,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "esp_heap_caps.h"
+
 #include "mbedtls/base64.h"
 
 #include "cJSON.h"
@@ -208,7 +210,8 @@ static void _rx_consume_text(struct joyinside *ji, const uint8_t *data, int len)
 static void _rx_task(void *arg)
 {
     struct joyinside *ji = (struct joyinside *)arg;
-    uint8_t *frame = (uint8_t *)malloc(TEXT_REASSEMBLY_MAX);
+    /* 16 KB scratch: keep it out of scarce internal RAM. */
+    uint8_t *frame = (uint8_t *)heap_caps_malloc(TEXT_REASSEMBLY_MAX, MALLOC_CAP_SPIRAM);
     if (frame == NULL) {
         hal_log_err("RX task failed: OOM frame buffer");
         ji->running = false;
@@ -259,8 +262,8 @@ static void _rx_task(void *arg)
 static void _tx_task(void *arg)
 {
     struct joyinside *ji = (struct joyinside *)arg;
-    uint8_t *opus_buf = (uint8_t *)malloc(OPUS_PACKET_MAX);
-    uplink_frame_t *frame = (uplink_frame_t *)malloc(sizeof(uplink_frame_t));
+    uint8_t *opus_buf = (uint8_t *)heap_caps_malloc(OPUS_PACKET_MAX, MALLOC_CAP_SPIRAM);
+    uplink_frame_t *frame = (uplink_frame_t *)heap_caps_malloc(sizeof(uplink_frame_t), MALLOC_CAP_SPIRAM);
     if (opus_buf == NULL || frame == NULL) {
         hal_log_err("TX task failed: OOM");
         free(opus_buf);
@@ -330,7 +333,7 @@ joyinside_handle_t joyinside_create(const joyinside_config_t *config)
         return NULL;
     }
 
-    struct joyinside *ji = (struct joyinside *)calloc(1, sizeof(struct joyinside));
+    struct joyinside *ji = (struct joyinside *)heap_caps_calloc(1, sizeof(struct joyinside), MALLOC_CAP_SPIRAM);
     if (ji == NULL) {
         hal_log_err("Create failed: OOM");
         return NULL;
@@ -352,8 +355,8 @@ joyinside_handle_t joyinside_create(const joyinside_config_t *config)
     ji->text_cb = config->text_cb;
     ji->user_ctx = config->user_ctx;
 
-    ji->text_buf = (uint8_t *)malloc(TEXT_REASSEMBLY_MAX);
-    ji->decode_pcm = (int16_t *)malloc(JOYINSIDE_OPUS_FRAME_SAMPLES * 2 * sizeof(int16_t));
+    ji->text_buf = (uint8_t *)heap_caps_malloc(TEXT_REASSEMBLY_MAX, MALLOC_CAP_SPIRAM);
+    ji->decode_pcm = (int16_t *)heap_caps_malloc(JOYINSIDE_OPUS_FRAME_SAMPLES * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     ji->ws_mux = hal_mutex_create("ji_ws");
     ji->event = hal_event_create("ji_evt");
     ji->uplink_queue = hal_queue_create("ji_up", sizeof(uplink_frame_t), UPLINK_QUEUE_LEN);

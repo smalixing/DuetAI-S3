@@ -11,6 +11,7 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_spiffs.h"
+#include "esp_heap_caps.h"
 #include "driver/i2s.h"
 
 #include "audio_player.h"
@@ -197,9 +198,9 @@ esp_err_t audio_player_play_file(const char *path)
     bsp_board_power_ctrl(POWER_MODULE_AUDIO, true);
     bsp_codec_set_mute(false);
 
-    int16_t *mono = malloc(PCM_CHUNK_SAMPLES * sizeof(int16_t));
+    int16_t *mono = heap_caps_malloc(PCM_CHUNK_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     // Stereo output: duplicate each mono sample to L/R
-    int16_t *stereo = malloc(PCM_CHUNK_SAMPLES * 2 * sizeof(int16_t));
+    int16_t *stereo = heap_caps_malloc(PCM_CHUNK_SAMPLES * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     if (mono == NULL || stereo == NULL) {
         ESP_LOGE(TAG, "Failed to allocate playback buffers");
         free(mono);
@@ -276,7 +277,7 @@ esp_err_t audio_player_pcm_write(const int16_t *pcm, int samples)
     }
 
     // Stereo output: duplicate each mono sample to L/R
-    int16_t *stereo = malloc((size_t)samples * 2 * sizeof(int16_t));
+    int16_t *stereo = heap_caps_malloc((size_t)samples * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
     if (stereo == NULL) {
         ESP_LOGE(TAG, "PCM write failed: OOM stereo buffer");
         return ESP_ERR_NO_MEM;
