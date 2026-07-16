@@ -5,7 +5,7 @@ idf_component_register(SRCS "main.c" "lvgl_port.c" "wake_word_task.c" "audio_pla
                        INCLUDE_DIRS "include" "joyinside"
                        REQUIRES bsp lvgl os_hal spi_flash esp-sr spiffs
                                 hal_socket espressif__cjson 78__esp-opus
-                                esp_wifi esp_netif nvs_flash esp_event)
+                                esp_wifi esp_netif nvs_flash esp_event esp_timer)
 
 # Flash the voice/ folder (WAV prompts) into the "voice" SPIFFS partition
 spiffs_create_partition_image(voice "${CMAKE_SOURCE_DIR}/voice" FLASH_IN_PROJECT)
