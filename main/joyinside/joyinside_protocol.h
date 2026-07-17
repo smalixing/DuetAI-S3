@@ -64,6 +64,21 @@ int joyinside_protocol_build_tts(char *buf, int buf_len, const char *mid, const 
  */
 int joyinside_protocol_build_ping(char *buf, int buf_len, const char *mid);
 
+/**
+ * @brief  Build a TEXT input message JSON (contentType "TEXT")
+ *
+ *         Sends a typed user turn to the server as text instead of audio; the
+ *         server treats it like a recognized utterance and responds normally.
+ *
+ * @param[out]  buf      Output buffer
+ * @param[in]   buf_len  Size of buf
+ * @param[in]   mid      Message id (UUID)
+ * @param[in]   text     NUL-terminated UTF-8 user input text
+ *
+ * @return  Bytes written (excluding NUL), or -1 on truncation
+ */
+int joyinside_protocol_build_text_input(char *buf, int buf_len, const char *mid, const char *text);
+
 #ifdef __cplusplus
 }
 #endif

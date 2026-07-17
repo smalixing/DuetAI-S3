@@ -205,6 +205,20 @@ joyinside_err_t joyinside_interrupt(joyinside_handle_t handle);
  */
 joyinside_err_t joyinside_text_to_speech(joyinside_handle_t handle, const char *text);
 
+/**
+ * @brief  Send a typed user turn to the server as text (contentType "TEXT")
+ *
+ * @note   The server treats the text like a recognized utterance and replies
+ *         with the usual ASR/TTS/EVENT stream. Use this for keyboard input in
+ *         place of speaking a turn.
+ *
+ * @param[in]  handle  Handle from joyinside_create()
+ * @param[in]  text    NUL-terminated UTF-8 text to send as user input
+ *
+ * @return  JOYINSIDE_ERR_OK on success, error code otherwise
+ */
+joyinside_err_t joyinside_text_input(joyinside_handle_t handle, const char *text);
+
 #ifdef __cplusplus
 }
 #endif

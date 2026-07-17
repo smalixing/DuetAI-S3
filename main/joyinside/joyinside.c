@@ -591,3 +591,24 @@ joyinside_err_t joyinside_text_to_speech(joyinside_handle_t handle, const char *
     free(json);
     return ret;
 }
+
+joyinside_err_t joyinside_text_input(joyinside_handle_t handle, const char *text)
+{
+    if (handle == NULL || text == NULL) {
+        return JOYINSIDE_ERR_INVALID_ARG;
+    }
+
+    joyinside_auth_gen_uuid(handle->mid);
+
+    int cap = 256 + (int)strlen(text);
+    char *json = (char *)malloc(cap);
+    if (json == NULL) {
+        hal_log_err("Text-input failed: OOM");
+        return JOYINSIDE_ERR_NO_MEM;
+    }
+
+    int len = joyinside_protocol_build_text_input(json, cap, handle->mid, text);
+    joyinside_err_t ret = (len > 0) ? _ws_send_text(handle, json, len) : JOYINSIDE_ERR_FAIL;
+    free(json);
+    return ret;
+}

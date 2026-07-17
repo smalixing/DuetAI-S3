@@ -22,8 +22,13 @@
 #define CT_PONG                     "PONG"
 
 /* eventType values */
+#define ET_CFG_BOT                  "CFG_BOT_EVENT"
+#define ET_CHAT_UPDATED             "SERVER_VOICE_CHAT_UPDATED"
+#define ET_AGENT_START              "CALL_AGENT_START_EVENT"
+#define ET_EMPTY_CONTENT            "EMPTY_CONTENT"
 #define ET_TTS_SENTENCE_START       "TTS_SENTENCE_START"
 #define ET_TTS_COMPLETE             "TTS_COMPLETE"
+#define ET_COMPLETE                 "COMPLETE"
 #define ET_INTERRUPTED              "CALL_AGENT_INTERRUPTED"
 #define ET_VOICE_CHAT_EXIT          "VOICE_CHAT_EXIT_EVENT"
 #define ET_CALL_INTENT_END          "CALL_INTENT_END_EVENT"
@@ -91,9 +96,23 @@ static void _ev_call_intent_end(joyinside_handle_t handle, cJSON *event_data)
     ji_emit_event(handle, JOYINSIDE_EVENT_TTS_COMPLETE);
 }
 
+/* Informational events acknowledged by the reference client but needing no
+ * device-side action. Registered explicitly so they are recognized (logged as
+ * handled) rather than falling through as unknown eventTypes. */
+static void _ev_noop(joyinside_handle_t handle, cJSON *event_data)
+{
+    (void)handle;
+    (void)event_data;
+}
+
 static const event_entry_t EVENT_TABLE[] = {
+    {ET_CFG_BOT,            _ev_noop},
+    {ET_CHAT_UPDATED,       _ev_noop},
+    {ET_AGENT_START,        _ev_noop},
+    {ET_EMPTY_CONTENT,      _ev_noop},
     {ET_TTS_SENTENCE_START, _ev_tts_sentence_start},
     {ET_TTS_COMPLETE,       _ev_tts_complete},
+    {ET_COMPLETE,           _ev_noop},
     {ET_INTERRUPTED,        _ev_interrupted},
     {ET_VOICE_CHAT_EXIT,    _ev_chat_exit},
     {ET_CALL_INTENT_END,    _ev_call_intent_end},
@@ -146,10 +165,21 @@ static void _ct_asr(joyinside_handle_t handle, cJSON *content)
     }
 }
 
+/* AGENT / ACTIVITY / PONG carry no device-side action in this client but are
+ * registered so they are recognized rather than logged as unknown contentTypes. */
+static void _ct_noop(joyinside_handle_t handle, cJSON *content)
+{
+    (void)handle;
+    (void)content;
+}
+
 static const content_entry_t CONTENT_TABLE[] = {
-    {CT_EVENT, _ct_event},
-    {CT_TTS,   _ct_tts},
-    {CT_ASR,   _ct_asr},
+    {CT_EVENT,    _ct_event},
+    {CT_TTS,      _ct_tts},
+    {CT_ASR,      _ct_asr},
+    {CT_AGENT,    _ct_noop},
+    {CT_ACTIVITY, _ct_noop},
+    {CT_PONG,     _ct_noop},
 };
 
 void joyinside_protocol_dispatch(joyinside_handle_t handle, cJSON *root)
@@ -258,6 +288,18 @@ int joyinside_protocol_build_ping(char *buf, int buf_len, const char *mid)
     int n = snprintf(buf, buf_len, "{\"mid\":\"%s\",\"contentType\":\"PING\"}", mid);
     if (n <= 0 || n >= buf_len) {
         hal_log_err("Build ping failed: buffer too small");
+        return -1;
+    }
+    return n;
+}
+
+int joyinside_protocol_build_text_input(char *buf, int buf_len, const char *mid, const char *text)
+{
+    int n = snprintf(buf, buf_len,
+        "{\"mid\":\"%s\",\"contentType\":\"TEXT\","
+        "\"content\":{\"input\":\"%s\"}}", mid, text);
+    if (n <= 0 || n >= buf_len) {
+        hal_log_err("Build text-input failed: buffer too small");
         return -1;
     }
     return n;
