@@ -15,6 +15,11 @@
 #include "esp_flash.h"
 #include "esp_system.h"
 #include "esp_err.h"
+#include "esp_app_desc.h"
+#include "esp_private/esp_clk.h"
+#if CONFIG_SPIRAM
+#include "esp_psram.h"
+#endif
 
 #include "bsp_board.h"
 #include "lvgl_port.h"
@@ -233,9 +238,53 @@ static void joyinside_session_start(void)
     hal_log_info("JoyInside session ready");
 }
 
+/**
+ * @brief Print the JoyInside startup banner with build and hardware info.
+ *
+ * Uses printf() rather than the logging macros so the ASCII art renders
+ * without per-line log tags/timestamps.
+ */
+static void print_joyinside_banner(void)
+{
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+
+    uint32_t flash_size = 0;
+    esp_flash_get_size(NULL, &flash_size);
+
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+
+    printf("\n");
+    printf("     _             ___           _     _\n");
+    printf("    | | ___  _   _|_ _|_ __  ___(_) __| | ___\n");
+    printf(" _  | |/ _ \\| | | || || '_ \\/ __| |/ _` |/ _ \\\n");
+    printf("| |_| | (_) | |_| || || | | \\__ \\ | (_| |  __/\n");
+    printf(" \\___/ \\___/ \\__, |___|_| |_|___/_|\\__,_|\\___|\n");
+    printf("             |___/\n");
+    printf("\n");
+    printf("------------------------------------------------------------\n");
+    printf("Version     : %s\n", FW_VERSION_STRING);
+    printf("SDK         : ESP-IDF %s\n", esp_get_idf_version());
+    printf("Git         : %s\n", app_desc->version);
+    printf("Build       : %s %s\n", app_desc->date, app_desc->time);
+    printf("Chip        : %s Rev%d\n", CONFIG_IDF_TARGET, chip_info.revision);
+    if (flash_size) {
+        printf("Flash       : %" PRIu32 " MB\n", flash_size / (uint32_t)(1024 * 1024));
+    }
+#if CONFIG_SPIRAM
+    printf("PSRAM       : %u MB\n", (unsigned)(esp_psram_get_size() / (1024 * 1024)));
+#else
+    printf("PSRAM       : none\n");
+#endif
+    printf("Heap Free   : %" PRIu32 " KB\n", esp_get_free_heap_size() / 1024);
+    printf("CPU Freq    : %d MHz\n", esp_clk_cpu_freq() / 1000000);
+    printf("------------------------------------------------------------\n");
+    printf("\n");
+}
+
 void app_main(void)
 {
-    hal_log_info("Firmware version: %s", FW_VERSION_STRING);
+    print_joyinside_banner();
 
     /* Print chip information */
     esp_chip_info_t chip_info;
