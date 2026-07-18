@@ -94,6 +94,7 @@ struct joyinside {
     joyinside_event_cb_t event_cb;       /*!< Status event callback */
     joyinside_pcm_cb_t   pcm_cb;        /*!< Decoded TTS PCM callback */
     joyinside_text_cb_t  text_cb;       /*!< ASR / TTS text callback */
+    joyinside_audiobook_cb_t audiobook_cb; /*!< Audiobook play-request callback */
     void                *user_ctx;       /*!< Opaque user pointer */
 
     void                *ws;             /*!< hal_ws connection context */
@@ -150,6 +151,13 @@ void ji_emit_text(joyinside_handle_t handle, bool is_asr, const char *text)
 {
     if (handle && handle->text_cb) {
         handle->text_cb(is_asr, text, handle->user_ctx);
+    }
+}
+
+void ji_emit_audiobook(joyinside_handle_t handle, const joyinside_audiobook_info_t *info)
+{
+    if (handle && handle->audiobook_cb) {
+        handle->audiobook_cb(info, handle->user_ctx);
     }
 }
 
@@ -353,6 +361,7 @@ joyinside_handle_t joyinside_create(const joyinside_config_t *config)
     ji->event_cb = config->event_cb;
     ji->pcm_cb = config->pcm_cb;
     ji->text_cb = config->text_cb;
+    ji->audiobook_cb = config->audiobook_cb;
     ji->user_ctx = config->user_ctx;
 
     ji->text_buf = (uint8_t *)heap_caps_malloc(TEXT_REASSEMBLY_MAX, MALLOC_CAP_SPIRAM);
@@ -611,4 +620,42 @@ joyinside_err_t joyinside_text_input(joyinside_handle_t handle, const char *text
     joyinside_err_t ret = (len > 0) ? _ws_send_text(handle, json, len) : JOYINSIDE_ERR_FAIL;
     free(json);
     return ret;
+}
+
+joyinside_err_t joyinside_audiobook_playing(joyinside_handle_t handle,
+                                            const char *book_id, const char *chapter_id)
+{
+    if (handle == NULL || book_id == NULL || chapter_id == NULL) {
+        return JOYINSIDE_ERR_INVALID_ARG;
+    }
+
+    char json[256];
+    int len = joyinside_protocol_build_audiobook_play(json, sizeof(json), handle->mid,
+                                                      book_id, chapter_id);
+    return (len > 0) ? _ws_send_text(handle, json, len) : JOYINSIDE_ERR_FAIL;
+}
+
+joyinside_err_t joyinside_audiobook_stopped(joyinside_handle_t handle,
+                                            const char *book_id, const char *chapter_id,
+                                            long progress, bool finish)
+{
+    if (handle == NULL || book_id == NULL || chapter_id == NULL) {
+        return JOYINSIDE_ERR_INVALID_ARG;
+    }
+
+    char json[256];
+    int len = joyinside_protocol_build_audiobook_stop(json, sizeof(json), handle->mid,
+                                                      book_id, chapter_id, progress, finish);
+    return (len > 0) ? _ws_send_text(handle, json, len) : JOYINSIDE_ERR_FAIL;
+}
+
+joyinside_err_t joyinside_audiobook_ping(joyinside_handle_t handle)
+{
+    if (handle == NULL) {
+        return JOYINSIDE_ERR_NOT_INIT;
+    }
+
+    char json[128];
+    int len = joyinside_protocol_build_audiobook_ping(json, sizeof(json), handle->mid);
+    return (len > 0) ? _ws_send_text(handle, json, len) : JOYINSIDE_ERR_FAIL;
 }

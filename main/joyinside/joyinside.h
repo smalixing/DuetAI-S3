@@ -42,7 +42,28 @@ typedef enum {
     JOYINSIDE_EVENT_TTS_COMPLETE = 5,  /*!< TTS playback stream finished */
     JOYINSIDE_EVENT_INTERRUPTED  = 6,  /*!< Server interrupted the current turn */
     JOYINSIDE_EVENT_CHAT_EXIT    = 7,  /*!< Voice chat session ended by server */
+    JOYINSIDE_EVENT_AUDIOBOOK_STOP = 8, /*!< Server asked to stop audiobook playback */
 } joyinside_event_t;
+
+/**
+ * @brief  Audiobook playback request delivered by the server (contentType "AUDIO_BOOK")
+ *
+ *         Describes one chapter to stream. The audio is an mp3 URL (audio_url),
+ *         so playback is left to the application: the SDK only relays this data
+ *         through joyinside_audiobook_cb_t. All string pointers are valid only
+ *         for the duration of the callback; copy anything you need to keep.
+ */
+typedef struct {
+    const char *book_id;       /*!< Book identifier */
+    const char *book_name;     /*!< Book display name; may be NULL */
+    const char *chapter_id;    /*!< Chapter identifier */
+    const char *chapter_name;  /*!< Chapter display name; may be NULL */
+    const char *audio_url;     /*!< mp3 stream URL to play */
+    const char *image_url;     /*!< Cover image URL; may be NULL */
+    long        progress;      /*!< Resume position in seconds (0 if absent) */
+    long        total_length;  /*!< Chapter total length in seconds (0 if absent) */
+    bool        include_tts;   /*!< True if an interstitial TTS precedes playback */
+} joyinside_audiobook_info_t;
 
 /**
  * @brief  Opaque JoyInside client handle
@@ -78,6 +99,24 @@ typedef void (*joyinside_pcm_cb_t)(const int16_t *pcm, int samples, void *user_c
 typedef void (*joyinside_text_cb_t)(bool is_asr, const char *text, void *user_ctx);
 
 /**
+ * @brief  Audiobook play-request callback
+ *
+ *         Fired when the server pushes an AUDIO_BOOK_PLAY request. The SDK does
+ *         not play the mp3 itself; the application streams info->audio_url and,
+ *         once playback actually starts, calls joyinside_audiobook_playing() to
+ *         report it back and begin the keepalive ping. When playback ends (by
+ *         the user or on natural completion) the application calls
+ *         joyinside_audiobook_stopped().
+ *
+ * @note   Called from the RX task; keep it short and do not block. All pointers
+ *         in info are valid only for the call duration.
+ *
+ * @param[in]  info      Chapter to play; borrowed for the call only
+ * @param[in]  user_ctx  Opaque pointer supplied in joyinside_config_t
+ */
+typedef void (*joyinside_audiobook_cb_t)(const joyinside_audiobook_info_t *info, void *user_ctx);
+
+/**
  * @brief  JoyInside client configuration
  *
  *         Any credential string left NULL falls back to its Kconfig default.
@@ -95,6 +134,7 @@ typedef struct {
     joyinside_event_cb_t event_cb;           /*!< Status event callback; may be NULL */
     joyinside_pcm_cb_t   pcm_cb;             /*!< Decoded TTS PCM callback; may be NULL */
     joyinside_text_cb_t  text_cb;            /*!< ASR / TTS text callback; may be NULL */
+    joyinside_audiobook_cb_t audiobook_cb;   /*!< Audiobook play-request callback; may be NULL */
     void                *user_ctx;           /*!< Passed back to every callback */
     uint32_t             reserved[4];         /*!< Reserved for ABI growth; zero-init */
 } joyinside_config_t;
@@ -218,6 +258,54 @@ joyinside_err_t joyinside_text_to_speech(joyinside_handle_t handle, const char *
  * @return  JOYINSIDE_ERR_OK on success, error code otherwise
  */
 joyinside_err_t joyinside_text_input(joyinside_handle_t handle, const char *text);
+
+/**
+ * @brief  Acknowledge that audiobook playback has started (uplink AUDIO_BOOK_PLAY)
+ *
+ *         Call this once the application has begun streaming the mp3 from the
+ *         audio_url delivered in joyinside_audiobook_cb_t (after any interstitial
+ *         TTS has finished). It also arms the internal keepalive ping.
+ *
+ * @param[in]  handle      Handle from joyinside_create()
+ * @param[in]  book_id     Book identifier from the play request
+ * @param[in]  chapter_id  Chapter identifier from the play request
+ *
+ * @return  JOYINSIDE_ERR_OK on success, error code otherwise
+ */
+joyinside_err_t joyinside_audiobook_playing(joyinside_handle_t handle,
+                                            const char *book_id, const char *chapter_id);
+
+/**
+ * @brief  Report that audiobook playback has stopped (uplink AUDIO_BOOK_STOP)
+ *
+ *         Call this when the user stops playback or a chapter finishes. On
+ *         natural completion pass finish=true with progress set to the played
+ *         length so the server can auto-advance to the next chapter. Stops the
+ *         internal keepalive ping.
+ *
+ * @param[in]  handle      Handle from joyinside_create()
+ * @param[in]  book_id     Book identifier from the play request
+ * @param[in]  chapter_id  Chapter identifier from the play request
+ * @param[in]  progress    Played length in seconds
+ * @param[in]  finish      true if the chapter played to its natural end
+ *
+ * @return  JOYINSIDE_ERR_OK on success, error code otherwise
+ */
+joyinside_err_t joyinside_audiobook_stopped(joyinside_handle_t handle,
+                                            const char *book_id, const char *chapter_id,
+                                            long progress, bool finish);
+
+/**
+ * @brief  Send an audiobook keepalive ping (uplink AUDIO_BOOK_PING)
+ *
+ * @note   The server expects a ping at least every 2 seconds while an audiobook
+ *         is playing. Drive this from the application's playback loop.
+ *
+ * @param[in]  handle  Handle from joyinside_create()
+ *
+ * @return  JOYINSIDE_ERR_OK on success, error code otherwise
+ */
+joyinside_err_t joyinside_audiobook_ping(joyinside_handle_t handle);
 
 #ifdef __cplusplus
 }

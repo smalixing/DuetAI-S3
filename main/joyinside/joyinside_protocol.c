@@ -20,6 +20,7 @@
 #define CT_AGENT                    "AGENT"
 #define CT_ACTIVITY                 "ACTIVITY"
 #define CT_PONG                     "PONG"
+#define CT_AUDIO_BOOK               "AUDIO_BOOK"
 
 /* eventType values */
 #define ET_CFG_BOT                  "CFG_BOT_EVENT"
@@ -32,6 +33,11 @@
 #define ET_INTERRUPTED              "CALL_AGENT_INTERRUPTED"
 #define ET_VOICE_CHAT_EXIT          "VOICE_CHAT_EXIT_EVENT"
 #define ET_CALL_INTENT_END          "CALL_INTENT_END_EVENT"
+
+/* AUDIO_BOOK contentType eventType values */
+#define AB_PLAY                     "AUDIO_BOOK_PLAY"
+#define AB_STOP                     "AUDIO_BOOK_STOP"
+#define AB_PANG                     "AUDIO_BOOK_PANG"
 
 #define ASR_TEXT_TYPE_FINAL         "IS_FINAL"
 
@@ -55,6 +61,21 @@ static const char *_json_str(cJSON *obj, const char *key)
         return NULL;
     }
     return item->valuestring;
+}
+
+static long _json_long(cJSON *obj, const char *key)
+{
+    cJSON *item = cJSON_GetObjectItem(obj, key);
+    if (!item || !cJSON_IsNumber(item)) {
+        return 0;
+    }
+    return (long)item->valuedouble;
+}
+
+static bool _json_bool(cJSON *obj, const char *key)
+{
+    cJSON *item = cJSON_GetObjectItem(obj, key);
+    return item && cJSON_IsBool(item) && cJSON_IsTrue(item);
 }
 
 /* ---------------- event (EVENT contentType) handlers ---------------- */
@@ -173,13 +194,73 @@ static void _ct_noop(joyinside_handle_t handle, cJSON *content)
     (void)content;
 }
 
+/* ---------------- AUDIO_BOOK contentType handler ---------------- */
+
+/* Server AUDIO_BOOK_PLAY: describe the chapter to stream and hand it to the app
+ * (the mp3 at audioURL is played by the application, not the SDK). */
+static void _ab_play(joyinside_handle_t handle, cJSON *event_data)
+{
+    const char *audio_url = _json_str(event_data, "audioURL");
+    const char *book_id = _json_str(event_data, "bookId");
+    const char *chapter_id = _json_str(event_data, "chapterId");
+    if (audio_url == NULL || book_id == NULL || chapter_id == NULL) {
+        hal_log_warn("AUDIO_BOOK_PLAY: missing bookId/chapterId/audioURL");
+        return;
+    }
+
+    joyinside_audiobook_info_t info = {
+        .book_id      = book_id,
+        .book_name    = _json_str(event_data, "bookName"),
+        .chapter_id   = chapter_id,
+        .chapter_name = _json_str(event_data, "chapterName"),
+        .audio_url    = audio_url,
+        .image_url    = _json_str(event_data, "imageURL"),
+        .progress     = _json_long(event_data, "progress"),
+        .total_length = _json_long(event_data, "totalLength"),
+        .include_tts  = _json_bool(event_data, "includeTTS"),
+    };
+    ji_emit_audiobook(handle, &info);
+}
+
+/* Server AUDIO_BOOK_STOP: tell the app to end playback of the current chapter. */
+static void _ab_stop(joyinside_handle_t handle, cJSON *event_data)
+{
+    (void)event_data;
+    ji_emit_event(handle, JOYINSIDE_EVENT_AUDIOBOOK_STOP);
+}
+
+static const event_entry_t AUDIO_BOOK_TABLE[] = {
+    {AB_PLAY, _ab_play},
+    {AB_STOP, _ab_stop},
+    {AB_PANG, _ev_noop},  /* downlink keepalive response; nothing to do */
+};
+
+static void _ct_audio_book(joyinside_handle_t handle, cJSON *content)
+{
+    const char *event_type = _json_str(content, "eventType");
+    if (event_type == NULL) {
+        hal_log_debug("AUDIO_BOOK: no eventType, drop");
+        return;
+    }
+    cJSON *event_data = cJSON_GetObjectItem(content, "eventData");
+
+    for (size_t i = 0; i < sizeof(AUDIO_BOOK_TABLE) / sizeof(AUDIO_BOOK_TABLE[0]); i++) {
+        if (strcmp(event_type, AUDIO_BOOK_TABLE[i].type) == 0) {
+            AUDIO_BOOK_TABLE[i].handler(handle, event_data);
+            return;
+        }
+    }
+    hal_log_debug("AUDIO_BOOK: unknown eventType '%s'", event_type);
+}
+
 static const content_entry_t CONTENT_TABLE[] = {
-    {CT_EVENT,    _ct_event},
-    {CT_TTS,      _ct_tts},
-    {CT_ASR,      _ct_asr},
-    {CT_AGENT,    _ct_noop},
-    {CT_ACTIVITY, _ct_noop},
-    {CT_PONG,     _ct_noop},
+    {CT_EVENT,      _ct_event},
+    {CT_TTS,        _ct_tts},
+    {CT_ASR,        _ct_asr},
+    {CT_AGENT,      _ct_noop},
+    {CT_ACTIVITY,   _ct_noop},
+    {CT_PONG,       _ct_noop},
+    {CT_AUDIO_BOOK, _ct_audio_book},
 };
 
 void joyinside_protocol_dispatch(joyinside_handle_t handle, cJSON *root)
@@ -300,6 +381,50 @@ int joyinside_protocol_build_text_input(char *buf, int buf_len, const char *mid,
         "\"content\":{\"input\":\"%s\"}}", mid, text);
     if (n <= 0 || n >= buf_len) {
         hal_log_err("Build text-input failed: buffer too small");
+        return -1;
+    }
+    return n;
+}
+
+int joyinside_protocol_build_audiobook_play(char *buf, int buf_len, const char *mid,
+                                            const char *book_id, const char *chapter_id)
+{
+    int n = snprintf(buf, buf_len,
+        "{\"mid\":\"%s\",\"contentType\":\"AUDIO_BOOK\","
+        "\"content\":{\"eventType\":\"AUDIO_BOOK_PLAY\","
+        "\"eventData\":{\"bookId\":\"%s\",\"chapterId\":\"%s\"}}}",
+        mid, book_id, chapter_id);
+    if (n <= 0 || n >= buf_len) {
+        hal_log_err("Build audiobook-play failed: buffer too small");
+        return -1;
+    }
+    return n;
+}
+
+int joyinside_protocol_build_audiobook_stop(char *buf, int buf_len, const char *mid,
+                                            const char *book_id, const char *chapter_id,
+                                            long progress, bool finish)
+{
+    int n = snprintf(buf, buf_len,
+        "{\"mid\":\"%s\",\"contentType\":\"AUDIO_BOOK\","
+        "\"content\":{\"eventType\":\"AUDIO_BOOK_STOP\","
+        "\"eventData\":{\"bookId\":\"%s\",\"chapterId\":\"%s\","
+        "\"progress\":%ld,\"finish\":%s}}}",
+        mid, book_id, chapter_id, progress, finish ? "true" : "false");
+    if (n <= 0 || n >= buf_len) {
+        hal_log_err("Build audiobook-stop failed: buffer too small");
+        return -1;
+    }
+    return n;
+}
+
+int joyinside_protocol_build_audiobook_ping(char *buf, int buf_len, const char *mid)
+{
+    int n = snprintf(buf, buf_len,
+        "{\"mid\":\"%s\",\"contentType\":\"AUDIO_BOOK\","
+        "\"content\":{\"eventType\":\"AUDIO_BOOK_PING\",\"eventData\":{}}}", mid);
+    if (n <= 0 || n >= buf_len) {
+        hal_log_err("Build audiobook-ping failed: buffer too small");
         return -1;
     }
     return n;

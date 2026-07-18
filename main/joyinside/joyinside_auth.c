@@ -237,7 +237,8 @@ char *joyinside_auth_build_uri(const char *base_uri, const char *access_key_id,
                   strlen("&accessTimestamp=") + strlen(timestamp) +
                   strlen("&accessNonce=") + strlen(nonce) +
                   strlen("&accessVersion=") + strlen(AUTH_VERSION) +
-                  strlen("&accessSign=") + strlen(sign_hex) + 1;
+                  strlen("&accessSign=") + strlen(sign_hex) +
+                  strlen("&feature=AUDIO_BOOK_V2") + 1;
 
     char *uri = (char *)malloc(uri_len);
     if (uri == NULL) {
@@ -247,7 +248,7 @@ char *joyinside_auth_build_uri(const char *base_uri, const char *access_key_id,
 
     snprintf(uri, uri_len,
              "%s?interruptCleanAsrBuf=true&botId=%s&sessionId=%s&requestId=%s&accessKeyId=%s"
-             "&accessTimestamp=%s&accessNonce=%s&accessVersion=%s&accessSign=%s",
+             "&accessTimestamp=%s&accessNonce=%s&accessVersion=%s&accessSign=%s&feature=AUDIO_BOOK_V2",
              base_uri, bot_id, session_id, request_id, access_key_id,
              timestamp, nonce, AUTH_VERSION, sign_hex);
 

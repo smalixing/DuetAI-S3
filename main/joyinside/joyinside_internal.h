@@ -33,6 +33,11 @@ void ji_emit_text(joyinside_handle_t handle, bool is_asr, const char *text);
  */
 void ji_emit_tts_base64(joyinside_handle_t handle, const char *audio_base64);
 
+/**
+ * @brief  Forward a server AUDIO_BOOK_PLAY request to the user audiobook callback
+ */
+void ji_emit_audiobook(joyinside_handle_t handle, const joyinside_audiobook_info_t *info);
+
 #ifdef __cplusplus
 }
 #endif

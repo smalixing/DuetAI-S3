@@ -79,6 +79,29 @@ int joyinside_protocol_build_ping(char *buf, int buf_len, const char *mid);
  */
 int joyinside_protocol_build_text_input(char *buf, int buf_len, const char *mid, const char *text);
 
+/**
+ * @brief  Build an uplink AUDIO_BOOK_PLAY message JSON
+ *
+ *         Reports to the server that the client has started playing a chapter.
+ */
+int joyinside_protocol_build_audiobook_play(char *buf, int buf_len, const char *mid,
+                                            const char *book_id, const char *chapter_id);
+
+/**
+ * @brief  Build an uplink AUDIO_BOOK_STOP message JSON
+ *
+ *         Reports that playback stopped. On natural completion pass finish=true
+ *         with progress set to the played length so the server can auto-advance.
+ */
+int joyinside_protocol_build_audiobook_stop(char *buf, int buf_len, const char *mid,
+                                            const char *book_id, const char *chapter_id,
+                                            long progress, bool finish);
+
+/**
+ * @brief  Build an uplink AUDIO_BOOK_PING (keepalive) message JSON
+ */
+int joyinside_protocol_build_audiobook_ping(char *buf, int buf_len, const char *mid);
+
 #ifdef __cplusplus
 }
 #endif
