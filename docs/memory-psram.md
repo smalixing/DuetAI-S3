@@ -58,6 +58,10 @@ CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
   `struct joyinside`、解码 PCM 缓冲、TX opus_buf/frame。
 - `main/wake_word_task.c`：I2S 采集缓冲 `i2s_buffer`、模型输入 `mono_buffer`。
 - `main/audio_player.c`：WAV 播放与流式 PCM 的 mono/stereo 暂存缓冲。
+- LVGL 堆：`main/lvgl_mem_psram.c` 实现 custom malloc，把 `lv_malloc/realloc/free`
+  转到 `heap_caps_*(MALLOC_CAP_SPIRAM)`。消除了 LVGL 内建 TLSF 的 64 KB 静态
+  `.bss` 池，所有 LVGL 对象/样式/图层缓冲改从 PSRAM 分配。绘制缓冲（`lvgl_port.c`）
+  仍保留在内部 DMA RAM，不受影响。
 
 ## 排查方法
 
@@ -70,4 +74,7 @@ CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
 - 运行时堆迁移：将 joyinside/wake_word/audio_player 的大缓冲改为
   `heap_caps_malloc(MALLOC_CAP_SPIRAM)`（见上文“已迁移到 PSRAM 的缓冲”），
   内部 RAM 运行时占用下降约 35 KB。
+- LVGL custom malloc：`sdkconfig` 改 `CONFIG_LV_USE_CUSTOM_MALLOC=y`，新增
+  `main/lvgl_mem_psram.c`。LVGL 堆整体迁入 PSRAM，去掉 64 KB 内部 `.bss` 静态池，
+  内部 RAM 静态占用下降约 64 KB。
 
