@@ -1,5 +1,6 @@
 set(sources "src/boards/bsp_board.c"
             "src/boards/esp32s3_dual_module.c"
+            "src/boards/smart_plate.c"
             "src/peripherals/bsp_adc.c"
             "src/peripherals/bsp_btn.c"
             "src/peripherals/bsp_codec.c"
@@ -15,7 +16,8 @@ set(sources "src/boards/bsp_board.c"
             "src/codec/es8156/es8156.c"
             "src/codec/es8311/es8311.c"
             "src/codec/es8388/es8388.c"
-            "src/lcd_panel/esp_lcd_gc9a01.c")
+            "src/lcd_panel/esp_lcd_gc9a01.c"
+            "src/lcd_panel/lcd_panel_gc9307.c")
 
 idf_component_register(SRCS ${sources}
                     INCLUDE_DIRS "include"

@@ -152,6 +152,7 @@ static bool lcd_trans_done_cb(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_
     return false;
 }
 extern esp_err_t esp_lcd_new_panel_gc9a01(const esp_lcd_panel_io_handle_t io, const esp_lcd_panel_dev_config_t *panel_dev_config, esp_lcd_panel_handle_t *ret_panel);
+extern esp_err_t esp_lcd_new_panel_gc9307(const esp_lcd_panel_io_handle_t io, const esp_lcd_panel_dev_config_t *panel_dev_config, esp_lcd_panel_handle_t *ret_panel);
 esp_err_t bsp_lcd_init(void)
 {
     const board_res_desc_t *brd = bsp_board_get_description();
@@ -167,6 +168,9 @@ esp_err_t bsp_lcd_init(void)
         ESP_ERROR_CHECK(esp_lcd_new_panel_nt35510(io_handle, &panel_config, &panel_handle));
     } else if(1 == brd->LCD_DISP_IC_ST) {
         ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
+    }
+    else if(3 == brd->LCD_DISP_IC_ST) {
+        ESP_ERROR_CHECK(esp_lcd_new_panel_gc9307(io_handle, &panel_config, &panel_handle));
     }
     else{
         ESP_ERROR_CHECK(esp_lcd_new_panel_gc9a01(io_handle, &panel_config, &panel_handle));

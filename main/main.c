@@ -23,228 +23,17 @@
 
 #include "bsp_board.h"
 #include "lvgl_port.h"
-#include "wake_word_task.h"
-#include "audio_player.h"
-#include "wifi_sta.h"
-#include "joyinside.h"
-#include "joyinside_opus.h"
 
 #include "version.h"
 #include "hal_log.h"
 
-static const char *TAG = "main";
-
-// Voice prompt played on wake word detection
-#define WAKE_PROMPT_WAV     "/voice/I_comeon.wav"
-
-// JoyInside audio format (16 kHz mono, 60 ms opus frame)
-#define JI_SAMPLE_RATE      (16000)
-
-// JoyInside client handle; NULL when the cloud session is unavailable
-static joyinside_handle_t s_joyinside = NULL;
-
-// Set while microphone audio should be streamed to the cloud for the current
-// turn. Written by the RX task (event_cb) and the wake callback, read by the
-// wake word task's PCM callback. A single-byte flag needs no lock.
-static volatile bool s_streaming = false;
-
-// True once TTS PCM playback has been started for the current response, so the
-// codec is powered/unmuted lazily on the first decoded frame. Set by the RX
-// task (pcm_cb) and cleared by the RX task (event_cb) or the wake word task on
-// barge-in, so it is volatile. audio_player serializes the actual hardware, so
-// a torn read here at worst causes one harmless extra begin/end.
-static volatile bool s_playing = false;
-
-// Uplink accumulation buffer: the wake word task delivers audio in wakenet-sized
-// chunks (typically 512 samples), but JoyInside expects exactly one 960-sample
-// (60 ms) frame per send. Accumulate until a full frame is ready.
-static int16_t s_up_buf[JOYINSIDE_OPUS_FRAME_SAMPLES];
-static int s_up_len = 0;
-
 /**
- * @brief Forward captured mic PCM to the cloud, one 60 ms frame at a time.
- *
- * Runs on the wake word task. Only streams while s_streaming is set.
- */
-static void uplink_pcm_callback(const int16_t *pcm, int samples)
-{
-    if (!s_streaming || s_joyinside == NULL) {
-        s_up_len = 0;
-        return;
-    }
-
-    for (int i = 0; i < samples; i++) {
-        s_up_buf[s_up_len++] = pcm[i];
-        if (s_up_len == JOYINSIDE_OPUS_FRAME_SAMPLES) {
-            joyinside_send_audio(s_joyinside, s_up_buf, s_up_len);
-            s_up_len = 0;
-        }
-    }
-}
-
-/**
- * @brief Decoded TTS PCM from the cloud; play it over the codec DAC.
- *
- * Runs on the JoyInside RX task.
- */
-static void joyinside_pcm_callback(const int16_t *pcm, int samples, void *user_ctx)
-{
-    (void)user_ctx;
-    if (!s_playing) {
-        // Pause mic capture so the wake word task stops reading the shared
-        // full-duplex I2S bus while we drive TTS playback on it.
-        wake_word_task_set_paused(true);
-        audio_player_pcm_begin(JI_SAMPLE_RATE);
-        s_playing = true;
-    }
-    audio_player_pcm_write(pcm, samples);
-}
-
-/**
- * @brief JoyInside lifecycle / turn events.
- *
- * Runs on the JoyInside RX task. Drives the per-turn streaming/playback state.
- */
-static void joyinside_event_callback(joyinside_event_t event, void *user_ctx)
-{
-    (void)user_ctx;
-    switch (event) {
-        case JOYINSIDE_EVENT_ASR_FINAL:
-            // Server has the full utterance (server-side VAD detected end of
-            // speech). This is the normal signal that stops uplink for the turn.
-            s_streaming = false;
-            break;
-        case JOYINSIDE_EVENT_INTERRUPTED:
-        case JOYINSIDE_EVENT_TTS_COMPLETE:
-            // A single response ended (or was cut short). Tear down playback
-            // only. Must NOT stop uplink: these can arrive for the *previous*
-            // response while the user is already speaking the next turn; cutting
-            // mic capture here would truncate that utterance before ASR_FINAL.
-            if (s_playing) {
-                audio_player_pcm_end();
-                s_playing = false;
-                wake_word_task_set_paused(false);  // resume mic capture
-            }
-            break;
-        case JOYINSIDE_EVENT_CHAT_EXIT:
-            // The whole voice-chat session ended. Stop uplink (safety net in
-            // case ASR_FINAL never came) and tear down playback.
-            s_streaming = false;
-            if (s_playing) {
-                audio_player_pcm_end();
-                s_playing = false;
-                wake_word_task_set_paused(false);  // resume mic capture
-            }
-            break;
-        default:
-            break;
-    }
-}
-
-/**
- * @brief ASR / TTS text; logged for visibility.
- *
- * Runs on the JoyInside RX task.
- */
-static void joyinside_text_callback(bool is_asr, const char *text, void *user_ctx)
-{
-    (void)user_ctx;
-    hal_log_info("%s: %s", is_asr ? "ASR" : "TTS", text);
-}
-
-/**
- * @brief Wake word detection callback
- *
- * This function is called when a wake word is detected.
- *
- * @param wake_word_index The index of detected wake word
- * @param wake_word_name The name of detected wake word
- */
-static void wake_word_detected_callback(int wake_word_index, const char *wake_word_name)
-{
-    hal_log_info("Wake word detected: %s (index: %d)", wake_word_name, wake_word_index);
-
-    // Barge-in: if a previous response is still playing, cut it off before the
-    // prompt. Stop the local stream first (so no more TTS frames reach the
-    // codec) and ask the server to abandon the current turn. Without this the
-    // old response and the new turn would fight over the codec.
-    if (s_joyinside != NULL && joyinside_is_connected(s_joyinside)) {
-        s_streaming = false;
-        if (s_playing) {
-            joyinside_interrupt(s_joyinside);
-            audio_player_pcm_end();
-            s_playing = false;
-            wake_word_task_set_paused(false);  // undo the pause taken at playback start
-        }
-    }
-
-    // Play the wake acknowledgement prompt. Runs on the wake word task, so
-    // detection is naturally paused while the prompt plays (no self-trigger).
-    audio_player_play_file(WAKE_PROMPT_WAV);
-
-    // Reconnect if the session dropped since the last turn (e.g. server idle
-    // close, or a network blip). The RX task has already exited on close, so a
-    // fresh connect here is safe and cannot deadlock against its teardown.
-    if (s_joyinside != NULL && !joyinside_is_connected(s_joyinside)) {
-        hal_log_info("Wake: session dropped, reconnecting");
-        if (joyinside_connect(s_joyinside) != JOYINSIDE_ERR_OK) {
-            hal_log_warn("Wake: reconnect failed, no uplink this turn");
-        }
-    }
-
-    // Open a voice turn: start uplink so the following speech reaches the cloud.
-    if (s_joyinside != NULL && joyinside_is_connected(s_joyinside)) {
-        s_up_len = 0;
-        if (joyinside_chat_update(s_joyinside) == JOYINSIDE_ERR_OK) {
-            s_streaming = true;
-        } else {
-            hal_log_warn("Wake: chat_update failed, no uplink this turn");
-        }
-    } else {
-        hal_log_warn("Wake: no cloud session, skipping uplink");
-    }
-}
-
-/**
- * @brief Connect to the JoyInside cloud and register audio/text/event callbacks.
- *
- * Credential fields are left NULL so the client falls back to its Kconfig
- * defaults. On any failure the cloud session stays disabled; local wake-word
- * detection still works.
- */
-static void joyinside_session_start(void)
-{
-    joyinside_config_t cfg = {
-        .version = JOYINSIDE_CONFIG_VERSION,
-        .event_cb = joyinside_event_callback,
-        .pcm_cb = joyinside_pcm_callback,
-        .text_cb = joyinside_text_callback,
-        .user_ctx = NULL,
-    };
-
-    s_joyinside = joyinside_create(&cfg);
-    if (s_joyinside == NULL) {
-        hal_log_err("JoyInside create failed");
-        return;
-    }
-
-    if (joyinside_connect(s_joyinside) != JOYINSIDE_ERR_OK) {
-        hal_log_err("JoyInside connect failed");
-        joyinside_destroy(s_joyinside);
-        s_joyinside = NULL;
-        return;
-    }
-
-    hal_log_info("JoyInside session ready");
-}
-
-/**
- * @brief Print the JoyInside startup banner with build and hardware info.
+ * @brief Print the startup banner with build and hardware info.
  *
  * Uses printf() rather than the logging macros so the ASCII art renders
  * without per-line log tags/timestamps.
  */
-static void print_joyinside_banner(void)
+static void print_banner(void)
 {
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
@@ -284,7 +73,7 @@ static void print_joyinside_banner(void)
 
 void app_main(void)
 {
-    print_joyinside_banner();
+    print_banner();
 
     /* Print chip information */
     esp_chip_info_t chip_info;
@@ -314,42 +103,6 @@ void app_main(void)
         return;
     }
     hal_log_info("LVGL port init done");
-
-    /* Mount voice partition and init audio player (needs I2S + codec from board init) */
-    ret = audio_player_init();
-    if (ESP_OK != ret) {
-        hal_log_err("Audio player init failed: %s", esp_err_to_name(ret));
-        // Continue; wake word still works, just without the prompt
-    } else {
-        hal_log_info("Audio player init done");
-    }
-
-    /* Bring up WiFi and open the JoyInside cloud session (best-effort) */
-    ret = wifi_sta_start();
-    if (ESP_OK != ret) {
-        hal_log_err("WiFi start failed: %s", esp_err_to_name(ret));
-        // Continue; local wake word detection works without the cloud
-    } else {
-        /* Cloud auth signs a millisecond wall-clock timestamp, so the system
-         * time must be synced before connecting or the server returns 401. */
-        ret = wifi_sta_sync_time();
-        if (ESP_OK != ret) {
-            hal_log_err("Time sync failed: %s; skipping cloud session", esp_err_to_name(ret));
-        } else {
-            joyinside_session_start();
-        }
-    }
-
-    /* Start wake word detection */
-    hal_log_info("Starting wake word detection...");
-    wake_word_task_set_pcm_callback(uplink_pcm_callback);
-    ret = wake_word_task_start(wake_word_detected_callback);
-    if (ESP_OK != ret) {
-        hal_log_err("Wake word task start failed: %s", esp_err_to_name(ret));
-        // Continue even if wake word detection fails, as it's not critical
-    } else {
-        hal_log_info("Wake word detection started");
-    }
 
     while (1) {
         printf("free heap size: %ld, internal size: %ld, minimum size: %ld\n",

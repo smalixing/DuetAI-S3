@@ -47,7 +47,7 @@ static const board_res_desc_t g_board_s3_dual_module_res = {
     .FUNC_LCD_EN =     (1),
     .LCD_BUS_WIDTH =   (1),
     .LCD_IFACE_SPI =   (1),
-    /*!< 0: NT35510, 1: ST7789, other: GC9A01 (see bsp_lcd_init) */
+    /*!< 0: NT35510, 1: ST7789, 2: GC9A01, 3: GC9307 (see bsp_lcd_init) */
     .LCD_DISP_IC_ST =  (2),
     .LCD_WIDTH =       (240),
     .LCD_HEIGHT =      (240),

@@ -29,6 +29,7 @@ typedef enum {
 typedef enum {
     BOARD_S3_BOX,
     BOARD_S3_DUAL_MODULE,
+    BOARD_SMART_PLATE,
 } boards_id_t;
 
 typedef struct {
