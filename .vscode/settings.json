@@ -1,11 +1,16 @@
 {
-  "idf.currentSetup": "G:\\esp\\.espressif\\v5.5.5\\esp-idf",
+  "idf.currentSetup": "D:\\esp\\v5.5.4\\esp-idf",
   "idf.portWin": "COM3",
   "idf.flashType": "UART",
   "idf.customExtraVars": {
-    "OPENOCD_SCRIPTS": "D:\\Espressif\\tools\\openocd-esp32\\v0.12.0-esp32-20230921/openocd-esp32/share/openocd/scripts",
     "IDF_CCACHE_ENABLE": "1",
-    "ESP_ROM_ELF_DIR": "D:\\Espressif\\tools\\esp-rom-elfs\\20230320/",
     "IDF_TARGET": "esp32s3"
-  }
+  },
+  "clangd.path": "C:\\Espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=d:\\private\\DuetAI-S3\\build"
+  ],
+  "idf.port": "COM9"
 }

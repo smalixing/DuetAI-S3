@@ -220,7 +220,7 @@ pm_page_state_t page_manager_state_unload_execute(pm_manager_t* self, pm_page_ba
     if (base->priv.stash.ptr != NULL && base->priv.stash.size != 0) {
         PM_LOG_INFO("Page(%s) free stash(0x%p)[%d]",
                     base->name, base->priv.stash.ptr, (int)base->priv.stash.size);
-        lv_mem_free(base->priv.stash.ptr);
+        lv_free(base->priv.stash.ptr);
         base->priv.stash.ptr  = NULL;
         base->priv.stash.size = 0;
     }

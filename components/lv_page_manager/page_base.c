@@ -112,7 +112,7 @@ bool page_base_stash_pop(pm_page_base_t* self, void* ptr, uint32_t size)
     }
 
     memcpy(ptr, self->priv.stash.ptr, self->priv.stash.size);
-    lv_mem_free(self->priv.stash.ptr);
+    lv_free(self->priv.stash.ptr);
     self->priv.stash.ptr  = NULL;
     self->priv.stash.size = 0;
     return true;

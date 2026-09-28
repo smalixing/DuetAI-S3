@@ -10,10 +10,10 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "lvgl.h"
-#include "demos/lv_demos.h"
 #include "bsp_lcd.h"
 #include "bsp_board.h"
 #include "gt911.h"
+#include "page_manager_demo.h"
 #include "lvgl_port.h"
 
 static const char *TAG = "lvgl_port";
@@ -102,8 +102,11 @@ static void lvgl_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 
 static void lvgl_create_demo_ui(void)
 {
-    /* Run the official LVGL widgets demo */
-    lv_demo_widgets();
+    /* Page manager demo: home page + screensaver + settings */
+    esp_err_t ret = page_manager_demo_start();
+    if (ESP_OK != ret) {
+        ESP_LOGE(TAG, "Page manager demo failed to start");
+    }
 }
 
 /**

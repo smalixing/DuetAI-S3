@@ -39,7 +39,7 @@ static void page_array_init(pm_page_array_t* arr)
 static void page_array_deinit(pm_page_array_t* arr)
 {
     if (arr->data) {
-        lv_mem_free(arr->data);
+        lv_free(arr->data);
     }
     arr->data = NULL;
     arr->size = 0;
@@ -50,7 +50,7 @@ static void page_array_deinit(pm_page_array_t* arr)
  * @brief  Ensure the array can hold at least @p need elements.
  * @note   Growth strategy mirrors std::vector: capacity doubles (starting at
  *         4) until it covers @p need. On growth a new buffer is allocated via
- *         lv_mem_alloc(), existing elements are copied over, and the old
+ *         lv_malloc(), existing elements are copied over, and the old
  *         buffer is freed. A no-op when the current capacity already suffices.
  * @param  arr   Pointer to the array descriptor.
  * @param  need  Minimum number of elements the array must accommodate.
@@ -65,14 +65,14 @@ static bool page_array_reserve(pm_page_array_t* arr, uint32_t need)
     uint32_t new_cap = arr->capacity ? arr->capacity * 2 : 4;
     while (new_cap < need) new_cap *= 2;
 
-    pm_page_base_t** new_buf = (pm_page_base_t**)lv_mem_alloc(new_cap * sizeof(pm_page_base_t*));
+    pm_page_base_t** new_buf = (pm_page_base_t**)lv_malloc(new_cap * sizeof(pm_page_base_t*));
     if (new_buf == NULL) {
         PM_LOG_ERROR("page_array_reserve: oom");
         return false;
     }
     if (arr->data) {
         memcpy(new_buf, arr->data, arr->size * sizeof(pm_page_base_t*));
-        lv_mem_free(arr->data);
+        lv_free(arr->data);
     }
     arr->data = new_buf;
     arr->capacity = new_cap;

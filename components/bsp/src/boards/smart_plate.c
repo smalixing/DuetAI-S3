@@ -224,6 +224,9 @@ esp_err_t bsp_board_smart_plate_init(void)
     }
     bsp_gpio_init(g_board_smart_plate_res.GPIO_LCD_BL,GPIO_MODE_OUTPUT,0,GPIO_INTR_DISABLE);
     bsp_gpio_init(g_board_smart_plate_res.GPIO_PWR_CTRL,GPIO_MODE_OUTPUT,0,GPIO_INTR_DISABLE);
+    /*!< Power up the peripheral rail (GPIO16) that feeds the LCD before
+     *   bsp_lcd_init() brings up the panel and its backlight PWM. */
+    bsp_gpio_base_set(g_board_smart_plate_res.GPIO_PWR_CTRL, g_board_smart_plate_res.GPIO_PWR_ON_LEVEL);
     /*!< GT911 address-select reset sequence: IRQ(GPIO9) low, pulse RST(GPIO6),
      *   then release IRQ with pull-up. */
     bsp_gpio_init(GPIO_NUM_9,GPIO_MODE_OUTPUT,0,GPIO_INTR_DISABLE);

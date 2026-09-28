@@ -180,7 +180,7 @@ static void on_root_async_leave(void* data)
 {
     pm_page_base_t* base = (pm_page_base_t*)data;
     PM_LOG_INFO("Page(%s) send event: LV_EVENT_LEAVE, need to handle...", base->name);
-    lv_event_send(base->root, LV_EVENT_LEAVE, base);
+    lv_obj_send_event(base->root, LV_EVENT_LEAVE, base);
 }
 
 /**

@@ -22,6 +22,7 @@
 #endif
 
 #include "bsp_board.h"
+#include "bsp_lcd.h"
 #include "lvgl_port.h"
 
 #include "version.h"
@@ -103,12 +104,14 @@ void app_main(void)
         return;
     }
     hal_log_info("LVGL port init done");
+    /*!< Diagnostic: read back the actual LEDC duty as backlight percentage */
+    hal_log_info("Backlight level: %d", bsp_lcd_get_backlight_level());
 
     while (1) {
         printf("free heap size: %ld, internal size: %ld, minimum size: %ld\n",
             esp_get_free_heap_size(),
             esp_get_free_internal_heap_size(),
             esp_get_minimum_free_heap_size());
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

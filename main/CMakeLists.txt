@@ -1,6 +1,8 @@
 idf_component_register(SRCS "main.c" "lvgl_port.c" "lvgl_mem_psram.c"
-                       INCLUDE_DIRS "include"
-                       REQUIRES bsp lvgl os_hal spi_flash esp_timer
+                            "ui/page_manager_demo.c" "ui/home_page.c"
+                            "ui/screensaver_page.c" "ui/settings_page.c"
+                       INCLUDE_DIRS "include" "ui"
+                       REQUIRES bsp lvgl lv_page_manager os_hal spi_flash esp_timer
                                 esp_app_format esp_psram esp_hw_support
                                 i2c_devices
                        # lvgl_mem_psram.c provides the LVGL custom allocator

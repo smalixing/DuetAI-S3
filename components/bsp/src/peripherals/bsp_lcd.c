@@ -119,7 +119,8 @@ static esp_err_t bsp_spi_lcd_init(esp_lcd_panel_io_handle_t *p_io_handle, bsp_lc
     //gpio_set_drive_capability(brd->GPIO_LCD_DC,GPIO_DRIVE_CAP_0);
     //gpio_set_drive_capability(brd->GPIO_LCD_CS,GPIO_DRIVE_CAP_0);
     bsp_lcd_backlight_init();
-    bsp_lcd_set_backlight_level(0);
+    bsp_lcd_set_backlight(true);
+    bsp_lcd_set_backlight_level(70);
     return ESP_OK;
 }
 

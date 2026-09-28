@@ -209,7 +209,7 @@ bool page_manager_switch_to(pm_manager_t* self, pm_page_base_t* new_node, bool i
         void* buffer = NULL;
 
         if (new_node->priv.stash.ptr == NULL) {
-            buffer = lv_mem_alloc(stash->size);
+            buffer = lv_malloc(stash->size);
             if (buffer == NULL) {
                 PM_LOG_ERROR("stash malloc failed");
             } else {

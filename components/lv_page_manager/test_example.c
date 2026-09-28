@@ -106,7 +106,7 @@ static const pm_page_vtable_t my_page_vtable = {
  */
 static pm_page_base_t* my_page_factory_create(pm_factory_t* factory, const char* class_name) {
     if (strcmp(class_name, "MyPage") == 0) {
-        my_page_t* page = (my_page_t*)lv_mem_alloc(sizeof(my_page_t));
+        my_page_t* page = (my_page_t*)lv_malloc(sizeof(my_page_t));
         if (page) {
             page_base_init(&page->base, &my_page_vtable);
             page->base.name = "MyPage";

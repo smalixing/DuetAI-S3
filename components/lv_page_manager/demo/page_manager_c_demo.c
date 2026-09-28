@@ -50,7 +50,7 @@ typedef struct {
  */
 static void demo_page_on_destroy(pm_page_base_t* base)
 {
-    lv_mem_free(base);
+    lv_free(base);
 }
 
 /* ================================================================== */
@@ -288,14 +288,14 @@ static pm_page_base_t* demo_factory_create(pm_factory_t* factory, const char* cl
     (void)factory;
 
     if (strcmp(class_name, "HomePage") == 0) {
-        home_page_t* p = (home_page_t*)lv_mem_alloc(sizeof(home_page_t));
+        home_page_t* p = (home_page_t*)lv_malloc(sizeof(home_page_t));
         if (!p) return NULL;
         page_base_init(&p->base, &s_home_vtable);
         return &p->base;
     }
 
     if (strcmp(class_name, "DetailPage") == 0) {
-        detail_page_t* p = (detail_page_t*)lv_mem_alloc(sizeof(detail_page_t));
+        detail_page_t* p = (detail_page_t*)lv_malloc(sizeof(detail_page_t));
         if (!p) return NULL;
         page_base_init(&p->base, &s_detail_vtable);
         return &p->base;
